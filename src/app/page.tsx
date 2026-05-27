@@ -18,6 +18,18 @@ export default async function Dashboard() {
     .from('defects')
     .select('property_id, status, severity');
 
+  // Recent defects — last 14 days, latest 8 rows
+  const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: recent } = await sb
+    .from('defects')
+    .select(`
+      defect_number, title, severity, identified_at,
+      property:property_id ( short_code, name )
+    `)
+    .gte('identified_at', fourteenDaysAgo)
+    .order('identified_at', { ascending: false })
+    .limit(8);
+
   const { data: fcas } = await sb
     .from('condition_assessments')
     .select('property_id, overall_rating, numeric_score, assessed_at')
@@ -68,6 +80,32 @@ export default async function Dashboard() {
         <StatCard label="Critical open" value={totalCritical} tone={totalCritical ? 'bad' : 'navy'} />
         <StatCard label="Major open" value={totalMajor} tone={totalMajor ? 'warn' : 'navy'} />
       </div>
+
+      {(recent && recent.length > 0) && (
+        <div className="mb-8 rounded-lg border bg-white">
+          <div className="flex items-baseline justify-between p-4 border-b">
+            <h2 className="text-sm font-bold text-navy uppercase tracking-wide">Recent defects — last 14 days</h2>
+            <Link href="/defects" className="text-xs text-muted hover:text-navy">View all →</Link>
+          </div>
+          <table className="w-full text-sm">
+            <tbody>
+              {recent.map((d: any) => (
+                <tr key={d.defect_number} className="border-t hover:bg-gray-50">
+                  <td className="px-4 py-2 font-mono text-xs text-muted whitespace-nowrap">{d.defect_number}</td>
+                  <td className="px-3 py-2"><Badge tone={severityTone(d.severity)}>{(d.severity || '').toUpperCase()}</Badge></td>
+                  <td className="px-3 py-2 text-xs text-muted whitespace-nowrap">
+                    {d.property ? (
+                      <Link href={`/properties/${d.property.short_code}`} className="hover:text-navy">{d.property.short_code}</Link>
+                    ) : '—'}
+                  </td>
+                  <td className="px-3 py-2">{d.title}</td>
+                  <td className="px-4 py-2 text-xs text-muted whitespace-nowrap">{(d.identified_at || '').slice(0, 10)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {(properties || []).map((p) => {

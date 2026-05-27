@@ -8,11 +8,14 @@ export const metadata: Metadata = {
   robots: 'noindex, nofollow',
 };
 
+export const dynamic = 'force-dynamic';
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const quickAddKey = process.env.QUICK_ADD_SECRET;
   return (
     <html lang="en">
       <body className="font-sans">
-        <Nav />
+        <Nav quickAddKey={quickAddKey} />
         <main className="max-w-6xl mx-auto px-4 py-8">{children}</main>
         <footer className="max-w-6xl mx-auto px-4 py-6 text-xs text-muted border-t mt-12">
           FMX  •  Commercial Management Solutions Pte Limited  •  Internal use
