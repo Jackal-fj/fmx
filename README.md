@@ -8,8 +8,10 @@ Read-only admin dashboard for the FMX facility management platform. Demo-grade �
 - `/properties` — Property list
 - `/properties/[code]` — Single property detail (FCA, defects, assets, service contracts)
 - `/defects` — All defects across the portfolio
+- `/defects/[number]` — Per-defect detail, photos and status-change audit trail
 - `/assets` — All assets across the portfolio
 - `/new-defect?key=<secret>` — **Quick Add Defect** mobile form, server-action write to Supabase
+- `/update-defect?key=<secret>` — **Quick Update Defect** picker + photo-gated status change
 
 ## Stack
 
@@ -62,6 +64,30 @@ The `/new-defect` route is a mobile-first form for logging defects on the fly be
 The form captures Property, Title, Severity (required) plus optional Description, Floor, Area, Category. Server-action writes to Supabase; on success you see the new defect reference number. The dashboard's "Recent defects" section reflects it within seconds.
 
 If the secret leaks (e.g. accidentally shared in a screenshot), rotate it: regenerate via `openssl rand -hex 24`, update in Vercel env vars + your local `.env.local`, and re-bookmark the new URL. Old bookmarks stop working.
+
+## Quick Update Defect — photo-gated status change
+
+The `/update-defect` route lets you change a defect's status to **In Progress** or **Resolved** from your phone with photo evidence. Gated by the same `QUICK_ADD_SECRET`.
+
+Flow:
+
+1. Tap **Update** in the nav (or open `/update-defect?key=<secret>`)
+2. Pick a defect from the list (grouped by property, severity-sorted)
+3. Choose new status: **In Progress** (work commenced) or **Resolved** (closed out)
+4. Tap **+ Add photo** — opens OS native picker (camera or gallery, 1–5 photos)
+5. Optional notes (e.g. contractor name, what was fixed)
+6. Submit — at least one photo is required by both the form and the database `defect_updates_photos_required` check constraint
+
+Photos are client-side compressed (max 1600 px width, JPEG quality 0.85) before upload to Supabase Storage bucket `defect-photos`, typically reducing 8–12 MB phone originals to 300–800 KB. The `defect_updates` table captures the audit trail: status_from, status_to, notes, photo URLs, timestamp.
+
+Resolved defects also populate `defects.resolved_at` and `defects.resolution_notes`. All photos roll into the defect detail page at `/defects/[number]` and the next monthly report.
+
+**Android home-screen shortcut:**
+
+1. Open `https://fmx.cmsfiji.com/update-defect?key=<secret>` in Chrome on Android
+2. Tap ⋮ menu → **Add to Home screen**
+3. Rename to "Update Defect" → Add
+4. Tap the icon to jump straight to the picker
 
 ## Security
 

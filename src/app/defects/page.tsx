@@ -32,7 +32,11 @@ export default async function DefectsList() {
           <tbody>
             {(defects || []).map((d: any) => (
               <tr key={d.defect_number} className="border-t hover:bg-gray-50">
-                <td className="p-3 font-mono text-xs">{d.defect_number}</td>
+                <td className="p-3 font-mono text-xs">
+                  <Link href={`/defects/${encodeURIComponent(d.defect_number)}`} className="text-navy hover:underline">
+                    {d.defect_number}
+                  </Link>
+                </td>
                 <td className="p-3">
                   {d.property ? (
                     <Link href={`/properties/${d.property.short_code}`} className="text-navy hover:underline">
@@ -43,7 +47,11 @@ export default async function DefectsList() {
                 <td className="p-3">
                   <Badge tone={severityTone(d.severity)}>{(d.severity || '').toUpperCase()}</Badge>
                 </td>
-                <td className="p-3">{d.title}</td>
+                <td className="p-3">
+                  <Link href={`/defects/${encodeURIComponent(d.defect_number)}`} className="text-navy hover:underline">
+                    {d.title}
+                  </Link>
+                </td>
                 <td className="p-3 text-muted">{d.status}</td>
                 <td className="p-3 text-muted text-xs">{(d.identified_at || '').slice(0, 10)}</td>
               </tr>

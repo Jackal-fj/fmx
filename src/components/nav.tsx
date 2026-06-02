@@ -7,7 +7,8 @@ export default function Nav({ quickAddKey }: { quickAddKey?: string }) {
     { href: '/defects',    label: 'Defects' },
     { href: '/assets',     label: 'Assets' },
   ];
-  const newDefectHref = quickAddKey ? `/new-defect?key=${encodeURIComponent(quickAddKey)}` : '/new-defect';
+  const newDefectHref    = quickAddKey ? `/new-defect?key=${encodeURIComponent(quickAddKey)}`    : '/new-defect';
+  const updateDefectHref = quickAddKey ? `/update-defect?key=${encodeURIComponent(quickAddKey)}` : '/update-defect';
   return (
     <nav className="border-b bg-white">
       <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
@@ -23,12 +24,20 @@ export default function Nav({ quickAddKey }: { quickAddKey?: string }) {
             ))}
           </ul>
           {quickAddKey && (
-            <Link
-              href={newDefectHref}
-              className="rounded-md bg-navy text-white text-sm font-semibold px-3 py-1.5 hover:bg-blue-900 whitespace-nowrap"
-            >
-              + Log defect
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link
+                href={updateDefectHref}
+                className="rounded-md border border-navy text-navy text-sm font-semibold px-3 py-1.5 hover:bg-navy hover:text-white whitespace-nowrap"
+              >
+                Update
+              </Link>
+              <Link
+                href={newDefectHref}
+                className="rounded-md bg-navy text-white text-sm font-semibold px-3 py-1.5 hover:bg-blue-900 whitespace-nowrap"
+              >
+                + Log defect
+              </Link>
+            </div>
           )}
         </div>
       </div>
