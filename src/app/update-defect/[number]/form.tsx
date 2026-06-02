@@ -140,10 +140,15 @@ export default function UpdateDefectForm({
       return;
     }
 
+    if (newStatus === 'resolved' && !notes.trim()) {
+      setErr('Resolution notes are required when marking a defect Resolved. Describe briefly what was done.');
+      return;
+    }
+
     const fd = new FormData();
     fd.set('defect_id', defect.id);
     fd.set('new_status', newStatus);
-    fd.set('notes', notes);
+    fd.set('notes', notes.trim());
     fd.set('key', secretKey);
     for (const p of previews) {
       fd.append('photos', p.file);
@@ -276,18 +281,28 @@ export default function UpdateDefectForm({
       {/* ---------- notes ---------- */}
       <div>
         <label className="block text-sm font-semibold text-navy mb-2">
-          Notes <span className="text-xs font-normal text-muted">(optional)</span>
+          {newStatus === 'resolved' ? (
+            <>Resolution notes <span className="text-red-600">*</span></>
+          ) : (
+            <>Notes <span className="text-xs font-normal text-muted">(optional)</span></>
+          )}
         </label>
         <textarea
           value={notes}
           onChange={e => setNotes(e.target.value)}
           rows={3}
+          required={newStatus === 'resolved'}
           placeholder={newStatus === 'resolved'
-            ? 'e.g. Contractor replaced ballast and tested. Light working normally.'
-            : 'e.g. Dispatched Pacific Electrical. ETA Wednesday AM.'
+            ? 'Required. e.g. Contractor replaced ballast and tested. Light working normally.'
+            : 'Optional. e.g. Dispatched Pacific Electrical. ETA Wednesday AM.'
           }
           className="w-full rounded-md border bg-white p-3 text-sm"
         />
+        {newStatus === 'resolved' && (
+          <p className="text-xs text-muted mt-1">
+            Briefly describe what was done — this becomes part of the permanent record and the monthly report.
+          </p>
+        )}
       </div>
 
       {/* ---------- error ---------- */}
