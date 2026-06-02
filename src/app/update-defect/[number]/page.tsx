@@ -44,7 +44,7 @@ export default async function UpdateDefectByNumber({
     );
   }
 
-  const property = defect.property as { short_code: string; name: string } | null;
+  const property = (defect.property as unknown) as { short_code: string; name: string } | null;
 
   return (
     <div className="max-w-md mx-auto">

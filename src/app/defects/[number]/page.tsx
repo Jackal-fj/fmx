@@ -43,8 +43,8 @@ export default async function DefectDetail({
     );
   }
 
-  const property = defect.property as { short_code: string; name: string } | null;
-  const space = defect.space as { name: string; short_code: string } | null;
+  const property = (defect.property as unknown) as { short_code: string; name: string } | null;
+  const space = (defect.space as unknown) as { name: string; short_code: string } | null;
   const photos: string[] = Array.isArray(defect.photo_urls) ? defect.photo_urls : [];
 
   // --- fetch update audit trail -------------------------------------------
