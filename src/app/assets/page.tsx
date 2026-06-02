@@ -5,19 +5,39 @@ import Badge, { ratingTone } from '@/components/badge';
 export const dynamic = 'force-dynamic';
 
 export default async function AssetsList() {
+  // Server component reads the secret directly from env so the action buttons
+  // appear when the env is configured. The key is included in links so the
+  // destination routes (gated server-side) succeed without an extra hop.
+  const key = process.env.QUICK_ADD_SECRET || '';
+  const quickAddEnabled = !!key;
+
   const { data: assets } = await supabaseServer
     .from('assets')
     .select(`
-      asset_code, name, asset_type, make, model, current_condition,
+      id, asset_code, name, asset_type, make, model, current_condition,
       property:property_id ( short_code, name )
     `)
     .eq('active', true)
     .order('asset_code')
-    .limit(200);
+    .limit(500);
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-navy mb-6">Assets</h1>
+      <div className="flex items-baseline justify-between mb-6 gap-4 flex-wrap">
+        <h1 className="text-2xl font-bold text-navy">Assets</h1>
+        {quickAddEnabled && (
+          <div className="flex gap-2">
+            <Link href={`/service-log?key=${encodeURIComponent(key)}`}
+                  className="text-sm px-3 py-1.5 rounded-md border border-navy text-navy hover:bg-navy hover:text-white">
+              Service log
+            </Link>
+            <Link href={`/new-asset?key=${encodeURIComponent(key)}`}
+                  className="text-sm px-3 py-1.5 rounded-md bg-navy text-white hover:bg-blue-900">
+              + Add asset
+            </Link>
+          </div>
+        )}
+      </div>
       <div className="rounded-lg border bg-white overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-accent text-navy">
@@ -32,8 +52,13 @@ export default async function AssetsList() {
           </thead>
           <tbody>
             {(assets || []).map((a: any) => (
-              <tr key={a.asset_code} className="border-t hover:bg-gray-50">
-                <td className="p-3 font-mono text-xs">{a.asset_code}</td>
+              <tr key={a.id} className="border-t hover:bg-gray-50">
+                <td className="p-3 font-mono text-xs">
+                  <Link href={`/assets/${a.id}${quickAddEnabled ? `?key=${encodeURIComponent(key)}` : ''}`}
+                        className="text-navy hover:underline">
+                    {a.asset_code || '—'}
+                  </Link>
+                </td>
                 <td className="p-3">
                   {a.property ? (
                     <Link href={`/properties/${a.property.short_code}`} className="text-navy hover:underline">
@@ -41,7 +66,12 @@ export default async function AssetsList() {
                     </Link>
                   ) : '—'}
                 </td>
-                <td className="p-3">{a.name}</td>
+                <td className="p-3">
+                  <Link href={`/assets/${a.id}${quickAddEnabled ? `?key=${encodeURIComponent(key)}` : ''}`}
+                        className="text-navy hover:underline">
+                    {a.name}
+                  </Link>
+                </td>
                 <td className="p-3 text-muted">{a.asset_type}</td>
                 <td className="p-3 text-muted">
                   {a.make || ''}{a.make && a.model ? ' ' : ''}{a.model || ''}
