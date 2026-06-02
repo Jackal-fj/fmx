@@ -140,8 +140,8 @@ export default function UpdateDefectForm({
       return;
     }
 
-    if (newStatus === 'resolved' && !notes.trim()) {
-      setErr('Resolution notes are required when marking a defect Resolved. Describe briefly what was done.');
+    if (newStatus === 'resolved' && notes.trim().length < 10) {
+      setErr('Resolution notes must be at least 10 characters. Briefly describe what was done.');
       return;
     }
 
@@ -292,16 +292,24 @@ export default function UpdateDefectForm({
           onChange={e => setNotes(e.target.value)}
           rows={3}
           required={newStatus === 'resolved'}
+          minLength={newStatus === 'resolved' ? 10 : 0}
           placeholder={newStatus === 'resolved'
-            ? 'Required. e.g. Contractor replaced ballast and tested. Light working normally.'
+            ? 'Required, min 10 chars. e.g. Contractor replaced ballast and tested. Light working normally.'
             : 'Optional. e.g. Dispatched Pacific Electrical. ETA Wednesday AM.'
           }
           className="w-full rounded-md border bg-white p-3 text-sm"
         />
         {newStatus === 'resolved' && (
-          <p className="text-xs text-muted mt-1">
-            Briefly describe what was done — this becomes part of the permanent record and the monthly report.
-          </p>
+          <div className="flex items-baseline justify-between mt-1">
+            <p className="text-xs text-muted">
+              Becomes part of the permanent record and the monthly report.
+            </p>
+            <span
+              className={`text-xs ${notes.trim().length >= 10 ? 'text-green-700' : 'text-muted'}`}
+            >
+              {notes.trim().length}/10
+            </span>
+          </div>
         )}
       </div>
 

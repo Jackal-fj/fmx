@@ -32,8 +32,8 @@ export async function updateDefect(formData: FormData): Promise<UpdateResult> {
   if (!allowedStatus.includes(newStatus)) {
     return { ok: false, error: 'Status must be In Progress or Resolved.' };
   }
-  if (newStatus === 'resolved' && !notes) {
-    return { ok: false, error: 'Resolution notes are required when marking a defect Resolved.' };
+  if (newStatus === 'resolved' && notes.trim().length < 10) {
+    return { ok: false, error: 'Resolution notes must be at least 10 characters when marking a defect Resolved.' };
   }
 
   // --- collect photo files -------------------------------------------------

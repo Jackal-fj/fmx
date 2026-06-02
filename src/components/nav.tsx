@@ -10,7 +10,7 @@ export default function Nav({ quickAddKey }: { quickAddKey?: string }) {
   const newDefectHref    = quickAddKey ? `/new-defect?key=${encodeURIComponent(quickAddKey)}`    : '/new-defect';
   const updateDefectHref = quickAddKey ? `/update-defect?key=${encodeURIComponent(quickAddKey)}` : '/update-defect';
   return (
-    <nav className="border-b bg-white">
+    <nav className="border-b bg-white sticky top-0 z-40 shadow-sm">
       <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
         <Link href="/" className="font-bold text-navy text-lg whitespace-nowrap">
           FMX <span className="text-muted text-sm font-normal ml-2 hidden sm:inline">Commercial Management Solutions</span>
