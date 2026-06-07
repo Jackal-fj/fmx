@@ -3,7 +3,12 @@
 import { supabaseServer } from '@/lib/supabase';
 import { redirect } from 'next/navigation';
 
-export async function createDefect(formData: FormData) {
+type CreateResult = {
+  ok: boolean;
+  error?: string;
+};
+
+export async function createDefect(formData: FormData): Promise<CreateResult> {
   const propertyCode = (formData.get('property_code') as string || '').trim();
   const title        = (formData.get('title') as string || '').trim();
   const severity     = (formData.get('severity') as string || '').trim();
@@ -15,17 +20,25 @@ export async function createDefect(formData: FormData) {
 
   // --- secret-key gate -----------------------------------------------------
   const required = process.env.QUICK_ADD_SECRET;
-  if (required && key !== required) {
+  if (!required || key !== required) {
     redirect('/');
   }
 
   // --- validation ----------------------------------------------------------
   if (!propertyCode || !title || !severity) {
-    redirect(`/new-defect?key=${encodeURIComponent(key)}&error=missing_required`);
+    return { ok: false, error: 'Property, title, and severity are required.' };
   }
   const allowedSeverity = ['minor', 'moderate', 'major', 'critical'];
   if (!allowedSeverity.includes(severity)) {
-    redirect(`/new-defect?key=${encodeURIComponent(key)}&error=bad_severity`);
+    return { ok: false, error: 'Invalid severity value.' };
+  }
+
+  // --- photos --------------------------------------------------------------
+  const photoFiles = formData.getAll('photos').filter(
+    (v): v is File => v instanceof File && v.size > 0,
+  );
+  if (photoFiles.length > 5) {
+    return { ok: false, error: 'Maximum 5 photos.' };
   }
 
   // --- resolve property ----------------------------------------------------
@@ -35,7 +48,7 @@ export async function createDefect(formData: FormData) {
     .eq('short_code', propertyCode)
     .maybeSingle();
   if (!prop) {
-    redirect(`/new-defect?key=${encodeURIComponent(key)}&error=bad_property`);
+    return { ok: false, error: 'Property not found.' };
   }
 
   // --- resolve floor → space_id (best-effort) ------------------------------
@@ -64,11 +77,11 @@ export async function createDefect(formData: FormData) {
     description || null,
     category ? `Category: ${category}` : null,
     area ? `Area: ${area}` : null,
-    floor && !space_id ? `Floor: ${floor}` : null,  // include floor in desc if no space match
+    floor && !space_id ? `Floor: ${floor}` : null,
   ].filter(Boolean).join('. ');
 
-  // --- insert defect -------------------------------------------------------
-  const { data: defect, error } = await supabaseServer
+  // --- insert defect first so we have an id for photo paths ---------------
+  const { data: defect, error: insertErr } = await supabaseServer
     .from('defects')
     .insert({
       property_id: prop.id,
@@ -78,12 +91,45 @@ export async function createDefect(formData: FormData) {
       severity,
       status: 'open',
     })
-    .select('defect_number')
+    .select('id, defect_number')
     .single();
 
-  if (error || !defect) {
-    console.error('Defect insert failed:', error);
-    redirect(`/new-defect?key=${encodeURIComponent(key)}&error=db_failed`);
+  if (insertErr || !defect) {
+    console.error('Defect insert failed:', insertErr);
+    return { ok: false, error: `Save failed: ${insertErr?.message || 'unknown'}` };
+  }
+
+  // --- upload photos to Supabase Storage + write URLs back to defect ------
+  if (photoFiles.length > 0) {
+    const ts = Date.now();
+    const photoUrls: string[] = [];
+    for (let i = 0; i < photoFiles.length; i++) {
+      const file = photoFiles[i];
+      const ext = file.type === 'image/png' ? 'png'
+                : file.type === 'image/webp' ? 'webp'
+                : 'jpg';
+      const path = `${defect.id}/${ts}-${i + 1}.${ext}`;
+      const buffer = new Uint8Array(await file.arrayBuffer());
+      const { error: upErr } = await supabaseServer.storage
+        .from('defect-photos')
+        .upload(path, buffer, { contentType: file.type, upsert: false });
+      if (upErr) {
+        console.error('Defect photo upload failed:', upErr);
+        // Don't fail the whole submission — defect is saved, log a warning
+        // and surface partial success
+        continue;
+      }
+      const { data: urlData } = supabaseServer.storage
+        .from('defect-photos')
+        .getPublicUrl(path);
+      photoUrls.push(urlData.publicUrl);
+    }
+    if (photoUrls.length > 0) {
+      await supabaseServer
+        .from('defects')
+        .update({ photo_urls: photoUrls })
+        .eq('id', defect.id);
+    }
   }
 
   redirect(`/new-defect/success?ref=${encodeURIComponent(defect.defect_number)}&key=${encodeURIComponent(key)}`);
