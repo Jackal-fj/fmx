@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import Nav from '@/components/nav';
+import { Analytics } from '@vercel/analytics/next';
 
 export const metadata: Metadata = {
   title: 'FMX — Commercial Management Solutions',
@@ -20,6 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <footer className="max-w-6xl mx-auto px-4 py-6 text-xs text-muted border-t mt-12">
           FMX  •  Commercial Management Solutions Pte Limited  •  Internal use
         </footer>
+        <Analytics />
       </body>
     </html>
   );
