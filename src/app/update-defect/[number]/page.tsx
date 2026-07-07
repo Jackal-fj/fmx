@@ -21,20 +21,23 @@ export default async function UpdateDefectByNumber({
   }
 
   // --- fetch defect + providers ------------------------------------------
-  const { data: defect } = await supabaseServer
-    .from('defects')
-    .select(`
-      id, defect_number, title, severity, status,
-      property:property_id ( short_code, name )
-    `)
-    .eq('defect_number', params.number)
-    .maybeSingle();
-
-  const { data: providers } = await supabaseServer
-    .from('providers')
-    .select('id, name, trade, whatsapp_number')
-    .eq('active', true)
-    .order('name');
+  const [{ data: defect }, { data: providers }] = await Promise.all([
+    supabaseServer
+      .from('defects')
+      .select(`
+        id, defect_number, title, description, severity, status,
+        identified_at, photo_urls,
+        property:property_id ( short_code, name ),
+        space:space_id ( name, short_code, space_type )
+      `)
+      .eq('defect_number', params.number)
+      .maybeSingle(),
+    supabaseServer
+      .from('providers')
+      .select('id, name, trade, whatsapp_number')
+      .eq('active', true)
+      .order('name'),
+  ]);
 
   if (!defect) {
     return (
@@ -51,6 +54,8 @@ export default async function UpdateDefectByNumber({
   }
 
   const property = (defect.property as unknown) as { short_code: string; name: string } | null;
+  const space = (defect.space as unknown) as { name: string; short_code: string; space_type: string } | null;
+  const existingPhotos: string[] = Array.isArray(defect.photo_urls) ? defect.photo_urls : [];
 
   return (
     <div className="max-w-md mx-auto">
@@ -69,10 +74,15 @@ export default async function UpdateDefectByNumber({
           id: defect.id,
           defect_number: defect.defect_number,
           title: defect.title,
+          description: defect.description,
           severity: defect.severity,
           status: defect.status,
+          identified_at: defect.identified_at,
           property_short_code: property?.short_code || '—',
           property_name: property?.name || '—',
+          space_name: space?.name || null,
+          space_type: space?.space_type || null,
+          existing_photos: existingPhotos,
         }}
         providers={providers || []}
         secretKey={key}

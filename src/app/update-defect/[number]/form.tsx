@@ -8,10 +8,15 @@ type DefectInfo = {
   id: string;
   defect_number: string;
   title: string;
+  description: string | null;
   severity: string;
   status: string;
+  identified_at: string | null;
   property_short_code: string;
   property_name: string;
+  space_name: string | null;
+  space_type: string | null;
+  existing_photos: string[];
 };
 
 type Preview = {
@@ -181,16 +186,71 @@ export default function UpdateDefectForm({
     <form onSubmit={handleSubmit} className="space-y-5">
       {/* ---------- defect summary card ---------- */}
       <div className="rounded-lg border bg-white p-4">
-        <div className="flex items-baseline justify-between mb-2">
+        <div className="flex items-baseline justify-between mb-2 gap-2">
           <span className="font-mono text-xs text-muted">{defect.defect_number}</span>
-          <span className="text-xs text-muted">{defect.property_short_code}</span>
+          <span className="text-xs text-muted">
+            {defect.property_short_code} — {defect.property_name}
+          </span>
         </div>
-        <div className="font-semibold text-navy mb-1">{defect.title}</div>
-        <div className="text-xs text-muted">
-          Severity: <span className="uppercase font-medium">{defect.severity}</span>
-          {'  •  '}
-          Current status: <span className="uppercase font-medium">{defect.status.replace('_', ' ')}</span>
+
+        <div className="font-semibold text-navy mb-2 leading-snug">{defect.title}</div>
+
+        {/* Existing photos from when the defect was logged — visual confirmation */}
+        {defect.existing_photos.length > 0 && (
+          <div className="mb-3">
+            <div className="text-[11px] uppercase tracking-wide text-muted mb-1">
+              Photo{defect.existing_photos.length > 1 ? 's' : ''} at identification
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {defect.existing_photos.map((url, i) => (
+                <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block">
+                  <img
+                    src={url}
+                    alt={`identified ${i + 1}`}
+                    className="w-full h-20 object-cover rounded border hover:opacity-90"
+                  />
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {defect.description && (
+          <div className="mb-3">
+            <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Description</div>
+            <p className="text-sm text-navy whitespace-pre-wrap">{defect.description}</p>
+          </div>
+        )}
+
+        {/* Metadata grid */}
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div>
+            <div className="text-muted">Severity</div>
+            <div className="font-semibold uppercase text-navy">{defect.severity}</div>
+          </div>
+          <div>
+            <div className="text-muted">Current status</div>
+            <div className="font-semibold uppercase text-navy">{defect.status.replace('_', ' ')}</div>
+          </div>
+          {defect.space_name && (
+            <div>
+              <div className="text-muted">Location</div>
+              <div className="text-navy">{defect.space_name}</div>
+            </div>
+          )}
+          {defect.identified_at && (
+            <div>
+              <div className="text-muted">Identified</div>
+              <div className="text-navy">{defect.identified_at.slice(0, 10)}</div>
+            </div>
+          )}
         </div>
+
+        {defect.existing_photos.length === 0 && !defect.description && !defect.space_name && (
+          <div className="mt-2 text-[11px] text-muted italic">
+            No photos or extra context at identification. Confirm reference number matches your site check.
+          </div>
+        )}
       </div>
 
       {/* ---------- new status ---------- */}

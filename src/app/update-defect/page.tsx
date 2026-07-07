@@ -25,8 +25,9 @@ export default async function UpdateDefectPicker({
   let query = supabaseServer
     .from('defects')
     .select(`
-      id, defect_number, title, severity, status, identified_at,
-      property:property_id ( id, short_code, name )
+      id, defect_number, title, description, severity, status, identified_at, photo_urls,
+      property:property_id ( id, short_code, name ),
+      space:space_id ( name, short_code )
     `)
     .in('status', ['open', 'work_ordered'])
     .gte('identified_at', sixMonthsAgo)
@@ -120,24 +121,48 @@ export default async function UpdateDefectPicker({
             <span className="text-xs text-muted">{g.rows.length}</span>
           </div>
           <div className="rounded-lg border bg-white overflow-hidden">
-            {g.rows.map((d: any, i: number) => (
-              <Link
-                key={d.id}
-                href={`/update-defect/${encodeURIComponent(d.defect_number)}?key=${encodeURIComponent(key)}`}
-                className={`block p-3 hover:bg-gray-50 ${i > 0 ? 'border-t' : ''}`}
-              >
-                <div className="flex items-baseline justify-between gap-2 mb-1">
-                  <span className="font-mono text-[11px] text-muted">{d.defect_number}</span>
-                  <Badge tone={severityTone(d.severity)}>{(d.severity || '').toUpperCase()}</Badge>
-                </div>
-                <div className="text-sm text-navy font-medium leading-snug">{d.title}</div>
-                <div className="text-[11px] text-muted mt-1">
-                  {d.status === 'work_ordered' ? 'In progress' : 'Open'}
-                  {'  •  '}
-                  Identified {(d.identified_at || '').slice(0, 10)}
-                </div>
-              </Link>
-            ))}
+            {g.rows.map((d: any, i: number) => {
+              const photos: string[] = Array.isArray(d.photo_urls) ? d.photo_urls : [];
+              const location = d.space?.name || null;
+              return (
+                <Link
+                  key={d.id}
+                  href={`/update-defect/${encodeURIComponent(d.defect_number)}?key=${encodeURIComponent(key)}`}
+                  className={`flex gap-3 p-3 hover:bg-gray-50 ${i > 0 ? 'border-t' : ''}`}
+                >
+                  {photos.length > 0 ? (
+                    <div className="relative shrink-0">
+                      <img
+                        src={photos[0]}
+                        alt=""
+                        className="w-16 h-16 object-cover rounded border"
+                      />
+                      {photos.length > 1 && (
+                        <span className="absolute bottom-0 right-0 bg-black/70 text-white text-[10px] px-1 rounded-tl rounded-br leading-tight">
+                          +{photos.length - 1}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="w-16 h-16 shrink-0 rounded border bg-gray-50 flex items-center justify-center text-[10px] text-muted text-center leading-tight">
+                      No<br />photo
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline justify-between gap-2 mb-1">
+                      <span className="font-mono text-[11px] text-muted">{d.defect_number}</span>
+                      <Badge tone={severityTone(d.severity)}>{(d.severity || '').toUpperCase()}</Badge>
+                    </div>
+                    <div className="text-sm text-navy font-medium leading-snug">{d.title}</div>
+                    <div className="text-[11px] text-muted mt-1 flex flex-wrap gap-x-2">
+                      <span>{d.status === 'work_ordered' ? 'In progress' : 'Open'}</span>
+                      {location && <span>· {location}</span>}
+                      <span>· {(d.identified_at || '').slice(0, 10)}</span>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         </div>
       ))}
