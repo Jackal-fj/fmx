@@ -10,6 +10,7 @@ const ALLOWED_CONDITION = ['excellent', 'good', 'adequate', 'marginal', 'poor', 
 export async function logServiceEvent(formData: FormData): Promise<LogResult> {
   const assetId       = (formData.get('asset_id') as string || '').trim();
   const servicedAt    = (formData.get('serviced_at') as string || '').trim();
+  const providerId    = (formData.get('provider_id') as string || '').trim();
   const servicedBy    = (formData.get('serviced_by') as string || '').trim();
   const conditionNew  = (formData.get('condition_after') as string || '').trim();
   const notes         = (formData.get('notes') as string || '').trim();
@@ -79,6 +80,7 @@ export async function logServiceEvent(formData: FormData): Promise<LogResult> {
       condition_after: conditionNew,
       notes: notes || null,
       photo_urls: photoUrls,
+      provider_id: providerId || null,
       source: 'service_log',
     });
   if (eventErr) {

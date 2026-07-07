@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useRef } from 'react';
 import { updateDefect } from '../actions';
+import VendorPicker, { type ProviderOption } from '@/components/vendor-picker';
 
 type DefectInfo = {
   id: string;
@@ -69,13 +70,16 @@ async function compressImage(file: File): Promise<File> {
 
 export default function UpdateDefectForm({
   defect,
+  providers,
   secretKey,
 }: {
   defect: DefectInfo;
+  providers: ProviderOption[];
   secretKey: string;
 }) {
   const [previews, setPreviews] = useState<Preview[]>([]);
   const [newStatus, setNewStatus] = useState<'work_ordered' | 'resolved'>('resolved');
+  const [providerId, setProviderId] = useState('');
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -149,6 +153,7 @@ export default function UpdateDefectForm({
     fd.set('defect_id', defect.id);
     fd.set('new_status', newStatus);
     fd.set('notes', notes.trim());
+    fd.set('provider_id', providerId);
     fd.set('key', secretKey);
     for (const p of previews) {
       fd.append('photos', p.file);
@@ -218,6 +223,14 @@ export default function UpdateDefectForm({
           </label>
         </div>
       </div>
+
+      {/* ---------- vendor ---------- */}
+      <VendorPicker
+        providers={providers}
+        value={providerId}
+        onChange={setProviderId}
+        label={newStatus === 'resolved' ? 'Vendor that did the repair' : 'Vendor dispatched'}
+      />
 
       {/* ---------- photos ---------- */}
       <div>

@@ -20,7 +20,7 @@ export default async function UpdateDefectByNumber({
     redirect('/');
   }
 
-  // --- fetch defect -------------------------------------------------------
+  // --- fetch defect + providers ------------------------------------------
   const { data: defect } = await supabaseServer
     .from('defects')
     .select(`
@@ -29,6 +29,12 @@ export default async function UpdateDefectByNumber({
     `)
     .eq('defect_number', params.number)
     .maybeSingle();
+
+  const { data: providers } = await supabaseServer
+    .from('providers')
+    .select('id, name, trade, whatsapp_number')
+    .eq('active', true)
+    .order('name');
 
   if (!defect) {
     return (
@@ -68,6 +74,7 @@ export default async function UpdateDefectByNumber({
           property_short_code: property?.short_code || '—',
           property_name: property?.name || '—',
         }}
+        providers={providers || []}
         secretKey={key}
       />
     </div>

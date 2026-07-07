@@ -13,10 +13,11 @@ type UpdateResult = {
 // Validates secret key, uploads photos to Supabase Storage, writes audit row,
 // flips defect status. Redirects to success on completion.
 export async function updateDefect(formData: FormData): Promise<UpdateResult> {
-  const defectId  = (formData.get('defect_id') as string || '').trim();
-  const newStatus = (formData.get('new_status') as string || '').trim();
-  const notes     = (formData.get('notes') as string || '').trim();
-  const key       = (formData.get('key') as string || '').trim();
+  const defectId   = (formData.get('defect_id') as string || '').trim();
+  const newStatus  = (formData.get('new_status') as string || '').trim();
+  const notes      = (formData.get('notes') as string || '').trim();
+  const providerId = (formData.get('provider_id') as string || '').trim();
+  const key        = (formData.get('key') as string || '').trim();
 
   // --- secret-key gate -----------------------------------------------------
   const required = process.env.QUICK_ADD_SECRET;
@@ -100,6 +101,7 @@ export async function updateDefect(formData: FormData): Promise<UpdateResult> {
       status_to: newStatus,
       notes: notes || null,
       photo_urls: uploadedUrls,
+      provider_id: providerId || null,
       source: 'quick_update',
     });
   if (auditErr) {

@@ -26,6 +26,12 @@ export default async function ServiceLogPage({
     .eq('id', params.id)
     .maybeSingle();
 
+  const { data: providers } = await supabaseServer
+    .from('providers')
+    .select('id, name, trade, whatsapp_number')
+    .eq('active', true)
+    .order('name');
+
   if (!asset) {
     return (
       <div className="max-w-md mx-auto">
@@ -57,6 +63,7 @@ export default async function ServiceLogPage({
           service_interval_months: asset.service_interval_months,
           property_short_code: property?.short_code || '—',
         }}
+        providers={providers || []}
         secretKey={key}
       />
     </div>

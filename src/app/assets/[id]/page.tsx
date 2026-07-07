@@ -53,7 +53,10 @@ export default async function AssetDetail({
   // service history
   const { data: events } = await supabaseServer
     .from('asset_service_events')
-    .select('id, serviced_at, serviced_by, condition_before, condition_after, notes, photo_urls, source')
+    .select(`
+      id, serviced_at, serviced_by, condition_before, condition_after, notes, photo_urls, source,
+      provider:provider_id ( name, trade )
+    `)
     .eq('asset_id', asset.id)
     .order('serviced_at', { ascending: false });
 
@@ -149,12 +152,23 @@ export default async function AssetDetail({
                   <div className="flex items-baseline justify-between mb-1 gap-2">
                     <div className="text-sm">
                       <span className="font-semibold">{fmtDate(e.serviced_at)}</span>
-                      {e.serviced_by && <span className="text-muted ml-2">by {e.serviced_by}</span>}
                     </div>
                     {e.condition_after && (
                       <Badge tone={ratingTone(e.condition_after)}>{e.condition_after.toUpperCase()}</Badge>
                     )}
                   </div>
+                  {(e.provider || e.serviced_by) && (
+                    <p className="text-xs text-muted mb-2">
+                      {e.provider && (
+                        <>
+                          Vendor: <span className="font-medium text-navy">{e.provider.name}</span>
+                          {e.provider.trade && <span> — {e.provider.trade}</span>}
+                        </>
+                      )}
+                      {e.provider && e.serviced_by && <span className="mx-2">·</span>}
+                      {e.serviced_by && <>Technician: {e.serviced_by}</>}
+                    </p>
+                  )}
                   {e.notes && <p className="text-sm text-navy mb-2 whitespace-pre-wrap">{e.notes}</p>}
                   {evPhotos.length > 0 && (
                     <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">

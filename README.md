@@ -89,6 +89,25 @@ Resolved defects also populate `defects.resolved_at` and `defects.resolution_not
 3. Rename to "Update Defect" → Add
 4. Tap the icon to jump straight to the picker
 
+## Operating model — when to use FMX vs the inspection workbook
+
+FMX and the Excel inspection workbook complement each other rather than compete. The current operating model:
+
+| When | Tool | Outcome |
+|---|---|---|
+| Spot a defect on site between inspections | FMX `/new-defect` (Quick Add) | New defect logged with photo, on dashboard within seconds |
+| Verify contractor work / close a defect | FMX `/update-defect` (Quick Update) | Status flip to In Progress or Resolved with required photo evidence |
+| Asset is serviced or replaced | FMX `/service-log` or `/new-asset` | Service event logged; last-serviced and next-due updated |
+| Asset record correction / retire | FMX `/assets/[id]/edit` | Direct edit with full audit timestamp |
+| Monthly formal walk-through per property | Excel workbook (`KGF/Client-wide/Inspections/`) + ingest parser | Structured 32-point walkthrough, FCA score, single deliverable document for client |
+| End of month roll-up | `fmx-monthly-report` Node generator | Word doc per property + portfolio summary, includes everything captured by both paths |
+
+**Why hybrid:**
+- Workbook: enforces walkthrough discipline (every space visited), works offline, single deliverable artefact, captures FCA component scores.
+- FMX: real-time, photo-gated, responsive — defects log themselves the moment they're observed, status updates carry mandatory evidence, no waiting for a monthly cycle to record reality.
+
+Side effect: each monthly workbook gets smaller as more ad-hoc activity flows through FMX. The walkthrough becomes about FCA scoring and *new* findings rather than bookkeeping on stale items.
+
 ## Security
 
 - The service-role key is **server-only**. Never imported in Client Components, never sent to the browser. The Supabase client in `src/lib/supabase.ts` is server-only.
@@ -97,17 +116,30 @@ Resolved defects also populate `defects.resolved_at` and `defects.resolution_not
 
 ## Roadmap
 
+**Shipped:**
+
+| # | Item | Notes |
+|---|---|---|
+| ✓ | Quick Add Defect — photo upload to Supabase Storage | Up to 5 optional photos with client-side compression |
+| ✓ | Quick Update Defect — photo-gated status change from phone | Required photo, 10-char minimum on resolution notes |
+| ✓ | Asset Add — mobile-first new asset form | With 20-type datalist and condition rating |
+| ✓ | Asset Edit — desktop-friendly full edit | Photo append, retire/reactivate toggle |
+| ✓ | Service Log — photo-required service event | Auto-calculates next-service-due from interval |
+| ✓ | Per-defect and per-asset detail pages | With full audit history |
+| ✓ | Sticky / fixed nav | Pinned to viewport top |
+
+**Pending:**
+
 | # | Item |
 |---|---|
 | 1 | Supabase Auth — email allowlist (replaces QUICK_ADD_SECRET) |
-| 2 | Quick Add — photo upload to Supabase Storage |
-| 3 | Quick Update — change defect status from phone |
-| 4 | Inline editing for defects on the property pages |
-| 5 | Work-order CRUD |
-| 6 | Reports list with download links |
-| 7 | WhatsApp dispatch trigger |
-| 8 | Mobile-native inspection capture (replaces Excel workbooks) |
-| 9 | Multi-tenant (other clients) with row-level isolation |
+| 2 | Work-order CRUD + status lifecycle |
+| 3 | Reports list with download links |
+| 4 | WhatsApp dispatch trigger (outbound) |
+| 5 | WhatsApp inbound webhook |
+| 6 | Multi-tenant (other clients) with row-level isolation |
+
+**Out of scope for now:** Mobile-native inspection capture was previously roadmapped to replace the Excel workbooks — that decision has been reversed in favour of the hybrid model documented above. The workbook stays as the monthly walkthrough tool because the structure, offline capability, and single-deliverable nature outweigh the integration benefit.
 
 ## Notes
 

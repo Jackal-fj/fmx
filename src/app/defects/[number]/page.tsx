@@ -50,7 +50,10 @@ export default async function DefectDetail({
   // --- fetch update audit trail -------------------------------------------
   const { data: updates } = await supabaseServer
     .from('defect_updates')
-    .select('id, status_from, status_to, notes, photo_urls, created_at, source')
+    .select(`
+      id, status_from, status_to, notes, photo_urls, created_at, source,
+      provider:provider_id ( name, trade )
+    `)
     .eq('defect_id', defect.id)
     .order('created_at', { ascending: false });
 
@@ -148,6 +151,12 @@ export default async function DefectDetail({
                       {(u.created_at || '').slice(0, 16).replace('T', ' ')}
                     </span>
                   </div>
+                  {u.provider && (
+                    <p className="text-xs text-muted mb-1">
+                      Vendor: <span className="font-medium text-navy">{u.provider.name}</span>
+                      {u.provider.trade && <span> — {u.provider.trade}</span>}
+                    </p>
+                  )}
                   {u.notes && (
                     <p className="text-sm text-navy mb-2 whitespace-pre-wrap">{u.notes}</p>
                   )}

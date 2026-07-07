@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useRef, useEffect } from 'react';
 import { logServiceEvent } from '../actions';
+import VendorPicker, { type ProviderOption } from '@/components/vendor-picker';
 
 type AssetInfo = {
   id: string;
@@ -70,12 +71,15 @@ function addMonthsToIso(iso: string, months: number): string {
 
 export default function ServiceLogForm({
   asset,
+  providers,
   secretKey,
 }: {
   asset: AssetInfo;
+  providers: ProviderOption[];
   secretKey: string;
 }) {
   const [servicedAt, setServicedAt] = useState(todayIso());
+  const [providerId, setProviderId] = useState('');
   const [servicedBy, setServicedBy] = useState('');
   const [conditionAfter, setConditionAfter] = useState(asset.current_condition || 'good');
   const [notes, setNotes] = useState('');
@@ -147,6 +151,7 @@ export default function ServiceLogForm({
     const fd = new FormData();
     fd.set('asset_id', asset.id);
     fd.set('serviced_at', servicedAt);
+    fd.set('provider_id', providerId);
     fd.set('serviced_by', servicedBy.trim());
     fd.set('condition_after', conditionAfter);
     fd.set('notes', notes.trim());
@@ -184,10 +189,19 @@ export default function ServiceLogForm({
                className="w-full rounded-md border bg-white p-3 text-sm" />
       </div>
 
+      <VendorPicker
+        providers={providers}
+        value={providerId}
+        onChange={setProviderId}
+        label="Vendor that serviced this asset"
+      />
+
       <div>
-        <label className="block text-sm font-semibold text-navy mb-2">Serviced by</label>
+        <label className="block text-sm font-semibold text-navy mb-2">
+          Technician name <span className="text-xs font-normal text-muted">(optional)</span>
+        </label>
         <input type="text" value={servicedBy} onChange={e => setServicedBy(e.target.value)}
-               placeholder="e.g. Pacific Refrigeration · Filipe"
+               placeholder="e.g. Filipe (the person on site)"
                className="w-full rounded-md border bg-white p-3 text-sm" />
       </div>
 

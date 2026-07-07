@@ -6,6 +6,7 @@ export default function Nav({ quickAddKey }: { quickAddKey?: string }) {
     { href: '/properties', label: 'Properties' },
     { href: '/defects',    label: 'Defects' },
     { href: '/assets',     label: 'Assets' },
+    { href: '/vendors',    label: 'Vendors' },
   ];
   const newDefectHref    = quickAddKey ? `/new-defect?key=${encodeURIComponent(quickAddKey)}`    : '/new-defect';
   const updateDefectHref = quickAddKey ? `/update-defect?key=${encodeURIComponent(quickAddKey)}` : '/update-defect';
