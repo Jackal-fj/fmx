@@ -9,9 +9,11 @@ type ProviderPayload = {
   whatsapp_number: string | null;
 };
 
-type CreateResult =
-  | { ok: true; provider: ProviderPayload }
-  | { ok: false; error: string };
+type CreateResult = {
+  ok: boolean;
+  error?: string;
+  provider?: ProviderPayload;
+};
 
 export async function createProvider(formData: FormData): Promise<CreateResult> {
   const name           = (formData.get('name') as string || '').trim();

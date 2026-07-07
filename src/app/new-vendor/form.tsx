@@ -38,7 +38,7 @@ export default function NewVendorForm({ secretKey }: { secretKey: string }) {
     startTransition(async () => {
       const result = await createProvider(fd);
       if (!result.ok) {
-        setErr(result.error);
+        setErr(result.error || 'Save failed.');
         return;
       }
       router.push('/vendors');
