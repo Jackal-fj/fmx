@@ -21,6 +21,7 @@ export default async function DefectDetail({
 }: {
   params: { number: string };
 }) {
+  // Fetch defect first so we can use its id to fetch updates in parallel next.
   const { data: defect } = await supabaseServer
     .from('defects')
     .select(`
@@ -47,15 +48,28 @@ export default async function DefectDetail({
   const space = (defect.space as unknown) as { name: string; short_code: string } | null;
   const photos: string[] = Array.isArray(defect.photo_urls) ? defect.photo_urls : [];
 
-  // --- fetch update audit trail -------------------------------------------
-  const { data: updates } = await supabaseServer
-    .from('defect_updates')
-    .select(`
-      id, status_from, status_to, notes, photo_urls, created_at, source,
-      provider:provider_id ( name, trade )
-    `)
-    .eq('defect_id', defect.id)
-    .order('created_at', { ascending: false });
+  // --- fetch update audit trail + whatsapp thread in parallel --------------
+  const [{ data: updates }, { data: waMessages }] = await Promise.all([
+    supabaseServer
+      .from('defect_updates')
+      .select(`
+        id, status_from, status_to, notes, photo_urls, created_at, source,
+        provider:provider_id ( name, trade )
+      `)
+      .eq('defect_id', defect.id)
+      .order('created_at', { ascending: false }),
+    supabaseServer
+      .from('whatsapp_messages')
+      .select(`
+        id, direction, from_number, to_number, body, media_urls, message_type, status,
+        created_at, sent_at, delivered_at, read_at, error_message,
+        provider:provider_id ( name, trade )
+      `)
+      .eq('defect_id', defect.id)
+      .order('created_at', { ascending: true }),
+  ]);
+
+  const dispatchKey = process.env.QUICK_ADD_SECRET || '';
 
   return (
     <div className="max-w-3xl">
@@ -66,7 +80,7 @@ export default async function DefectDetail({
         <span className="font-mono text-xs text-muted whitespace-nowrap">{defect.defect_number}</span>
       </div>
 
-      <div className="flex flex-wrap gap-2 mb-6">
+      <div className="flex flex-wrap gap-2 mb-4">
         <Badge tone={severityTone(defect.severity)}>{(defect.severity || '').toUpperCase()}</Badge>
         <Badge tone={statusTone(defect.status)}>{statusLabel(defect.status)}</Badge>
         {property && (
@@ -80,6 +94,23 @@ export default async function DefectDetail({
           </span>
         )}
       </div>
+
+      {dispatchKey && defect.status !== 'resolved' && (
+        <div className="flex gap-2 mb-6">
+          <Link
+            href={`/dispatch/${encodeURIComponent(defect.defect_number)}?key=${encodeURIComponent(dispatchKey)}`}
+            className="text-xs px-3 py-1.5 rounded-md bg-green-700 text-white hover:bg-green-800"
+          >
+            Dispatch to vendor via WhatsApp
+          </Link>
+          <Link
+            href={`/update-defect/${encodeURIComponent(defect.defect_number)}?key=${encodeURIComponent(dispatchKey)}`}
+            className="text-xs px-3 py-1.5 rounded-md border border-navy text-navy hover:bg-navy hover:text-white"
+          >
+            Update status
+          </Link>
+        </div>
+      )}
 
       {defect.description && (
         <div className="rounded-lg border bg-white p-4 mb-6 text-sm">
@@ -180,6 +211,50 @@ export default async function DefectDetail({
           </div>
         )}
       </div>
+
+      {/* ---------- WhatsApp thread ---------- */}
+      {(waMessages || []).length > 0 && (
+        <div className="mt-8">
+          <h2 className="text-sm font-bold text-navy uppercase tracking-wide mb-2">
+            WhatsApp thread ({(waMessages || []).length})
+          </h2>
+          <div className="rounded-lg border bg-gray-50 p-3 space-y-2">
+            {(waMessages || []).map((m: any) => {
+              const outbound = m.direction === 'outbound';
+              const media: string[] = Array.isArray(m.media_urls) ? m.media_urls : [];
+              return (
+                <div key={m.id} className={`flex ${outbound ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[85%] rounded-lg p-3 ${outbound ? 'bg-green-50 border border-green-200' : 'bg-white border'}`}>
+                    <div className="text-[11px] text-muted mb-1 flex items-center gap-2">
+                      {outbound
+                        ? <span>CMS → {m.provider?.name || m.to_number}</span>
+                        : <span>{m.provider?.name || m.from_number} → CMS</span>
+                      }
+                      <span>·</span>
+                      <span>{(m.created_at || '').slice(0, 16).replace('T', ' ')}</span>
+                      <span>·</span>
+                      <span className="uppercase text-[10px]">{m.status}</span>
+                    </div>
+                    {m.body && <p className="text-sm text-navy whitespace-pre-wrap">{m.body}</p>}
+                    {media.length > 0 && (
+                      <div className="grid grid-cols-3 gap-1 mt-2">
+                        {media.map((url, i) => (
+                          <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                            <img src={url} alt="" className="w-full h-16 object-cover rounded" />
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    {m.error_message && (
+                      <div className="text-[11px] text-red-700 mt-1">{m.error_message}</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

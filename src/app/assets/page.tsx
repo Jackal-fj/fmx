@@ -14,11 +14,15 @@ export default async function AssetsList() {
   const { data: assets } = await supabaseServer
     .from('assets')
     .select(`
-      id, asset_code, name, asset_type, make, model, current_condition,
+      id, asset_code, name, asset_type, make, model, current_condition, created_at,
       property:property_id ( short_code, name )
     `)
     .eq('active', true)
-    .order('asset_code')
+    // Newest first so freshly added assets appear at the top and are visible
+    // immediately. Within same created_at, fall back to code so long-standing
+    // items keep a stable order.
+    .order('created_at', { ascending: false })
+    .order('asset_code', { ascending: true, nullsFirst: false })
     .limit(500);
 
   return (

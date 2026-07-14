@@ -5,11 +5,12 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const LINKS = [
-  { href: '/',           label: 'Dashboard' },
-  { href: '/properties', label: 'Properties' },
-  { href: '/defects',    label: 'Defects' },
-  { href: '/assets',     label: 'Assets' },
-  { href: '/vendors',    label: 'Vendors' },
+  { href: '/',            label: 'Dashboard' },
+  { href: '/properties',  label: 'Properties' },
+  { href: '/defects',     label: 'Defects' },
+  { href: '/assets',      label: 'Assets' },
+  { href: '/maintenance', label: 'Maintenance' },
+  { href: '/vendors',     label: 'Vendors' },
 ];
 
 export default function Nav({ quickAddKey }: { quickAddKey?: string }) {
