@@ -11,6 +11,7 @@ const LINKS = [
   { href: '/assets',      label: 'Assets' },
   { href: '/maintenance', label: 'Maintenance' },
   { href: '/vendors',     label: 'Vendors' },
+  { href: '/reports',     label: 'Reports' },
 ];
 
 export default function Nav({ quickAddKey }: { quickAddKey?: string }) {
