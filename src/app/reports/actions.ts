@@ -2,17 +2,20 @@
 
 import { supabaseServer } from '@/lib/supabase';
 import { fetchReportSnapshot } from '@/lib/reports/data';
-import { buildReportsForMonth, buildPropertyReport, buildPortfolioReport } from '@/lib/reports/generate';
+import { buildPropertyReport, buildPortfolioReport } from '@/lib/reports/generate';
 import { redirect } from 'next/navigation';
 
 type Result = { ok: boolean; error?: string; count?: number };
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
-// Generate the full set (per-property + portfolio) for a given YYYY-MM.
-export async function generateAllReports(formData: FormData): Promise<Result> {
-  const month = (formData.get('month') as string || '').trim();
-  const key   = (formData.get('key') as string || '').trim();
+// Generate the selected reports for a given YYYY-MM. Scopes is an array of
+// property short_codes ('GH', 'KH', 'NH') plus 'PORTFOLIO' as a special value
+// for the portfolio roll-up. Server generates only what's selected.
+export async function generateReports(formData: FormData): Promise<Result> {
+  const month  = (formData.get('month') as string || '').trim();
+  const key    = (formData.get('key') as string || '').trim();
+  const scopes = formData.getAll('scopes').filter((v): v is string => typeof v === 'string');
 
   const required = process.env.QUICK_ADD_SECRET;
   if (!required || key !== required) redirect('/');
@@ -20,22 +23,24 @@ export async function generateAllReports(formData: FormData): Promise<Result> {
   if (!/^\d{4}-\d{2}$/.test(month)) {
     return { ok: false, error: 'Month must be in YYYY-MM format.' };
   }
+  if (scopes.length === 0) {
+    return { ok: false, error: 'Select at least one report to generate.' };
+  }
 
   try {
     const snap = await fetchReportSnapshot('KGF');
-    const reports = await buildReportsForMonth(snap, month);
+    let count = 0;
 
-    for (const r of reports) {
-      const path = `${month}/${r.filename}`;
-      const { error: upErr } = await supabaseServer.storage
-        .from('reports')
-        .upload(path, r.buffer, { contentType: DOCX_MIME, upsert: true });
-      if (upErr) {
-        return { ok: false, error: `Upload failed for ${r.filename}: ${upErr.message}` };
-      }
-      let property_id: string | null = null;
-      if (r.scope === 'property') {
-        const prop = snap.properties.find(p => p.short_code === r.short_code);
+    for (const scope of scopes) {
+      if (scope === 'PORTFOLIO') {
+        const r = await buildPortfolioReport(snap, month);
+        await saveOne(r.filename, r.buffer, month, r.scope, null, r.short_code);
+        count += 1;
+      } else {
+        const r = await buildPropertyReport(snap, scope, month);
+        if (!r) continue;
+        const prop = snap.properties.find(p => p.short_code === scope);
+        let property_id: string | null = null;
         if (prop) {
           const { data: propRow } = await supabaseServer
             .from('properties')
@@ -44,25 +49,42 @@ export async function generateAllReports(formData: FormData): Promise<Result> {
             .maybeSingle();
           property_id = propRow?.id || null;
         }
+        await saveOne(r.filename, r.buffer, month, r.scope, property_id, r.short_code);
+        count += 1;
       }
-      await supabaseServer.from('report_runs').insert({
-        report_month: month,
-        scope: r.scope,
-        property_id,
-        short_code: r.short_code,
-        storage_path: path,
-        filename: r.filename,
-        file_size_bytes: r.buffer.length,
-        generated_by: 'in_app',
-      });
     }
 
-    redirect(`/reports?key=${encodeURIComponent(key)}&saved=${reports.length}&month=${month}`);
+    redirect(`/reports?key=${encodeURIComponent(key)}&saved=${count}&month=${month}`);
   } catch (e: any) {
     if (e?.digest?.startsWith?.('NEXT_REDIRECT')) throw e;
     console.error('Report generation failed:', e);
     return { ok: false, error: e?.message || 'Report generation failed.' };
   }
+}
+
+async function saveOne(
+  filename: string,
+  buffer: Buffer,
+  month: string,
+  scope: string,
+  property_id: string | null,
+  short_code: string,
+) {
+  const path = `${month}/${filename}`;
+  const { error: upErr } = await supabaseServer.storage
+    .from('reports')
+    .upload(path, buffer, { contentType: DOCX_MIME, upsert: true });
+  if (upErr) throw new Error(`Upload failed for ${filename}: ${upErr.message}`);
+  await supabaseServer.from('report_runs').insert({
+    report_month: month,
+    scope,
+    property_id,
+    short_code,
+    storage_path: path,
+    filename,
+    file_size_bytes: buffer.length,
+    generated_by: 'in_app',
+  });
 }
 
 // Get a signed URL for a stored report — server action for the download button.

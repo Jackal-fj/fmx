@@ -26,14 +26,21 @@ export default async function ReportsPage({
   const generateEnabled = !!key;
   const urlKey = (searchParams.key || '').trim();
 
-  // Latest 200 reports across months
-  const { data: runs } = await supabaseServer
-    .from('report_runs')
-    .select('id, report_month, scope, short_code, storage_path, filename, file_size_bytes, generated_at, generated_by')
-    .order('report_month', { ascending: false })
-    .order('scope', { ascending: false })   // property before portfolio inside same month
-    .order('short_code', { ascending: true })
-    .limit(200);
+  // Latest 200 reports across months + active KGF properties for the form
+  const [{ data: runs }, { data: properties }] = await Promise.all([
+    supabaseServer
+      .from('report_runs')
+      .select('id, report_month, scope, short_code, storage_path, filename, file_size_bytes, generated_at, generated_by')
+      .order('report_month', { ascending: false })
+      .order('scope', { ascending: false })
+      .order('short_code', { ascending: true })
+      .limit(200),
+    supabaseServer
+      .from('properties')
+      .select('short_code, name')
+      .eq('active', true)
+      .order('short_code'),
+  ]);
 
   // Group by month
   type Group = { month: string; rows: any[] };
@@ -68,7 +75,7 @@ export default async function ReportsPage({
       )}
 
       {generateEnabled ? (
-        <GenerateForm secretKey={key} />
+        <GenerateForm properties={properties || []} secretKey={key} />
       ) : (
         <div className="mb-6 rounded-lg border border-orange-300 bg-orange-50 p-3 text-sm text-orange-800">
           Report generation is gated by QUICK_ADD_SECRET. Only visible when configured.
