@@ -52,6 +52,22 @@ export type OpenDefect = {
   severity: string;
   identified_at: string | null;
   description: string;
+  photo_urls: string[];
+  days_open: number | null;
+};
+
+export type ComplianceEvent = {
+  short_code: string | null;
+  kind: 'service_contract' | 'asset_pm' | 'contract_renewal';
+  label: string;
+  detail: string;
+  due_date: string;
+  days_until: number;
+};
+
+export type ResolvedThisMonth = {
+  short_code: string;
+  count: number;
 };
 
 export type AssetSummaryRow = {
@@ -82,6 +98,9 @@ export type ReportSnapshot = {
   openDefects: OpenDefect[];
   assetSummary: AssetSummaryRow[];
   serviceContracts: ServiceContractRow[];
+  complianceEvents: ComplianceEvent[];
+  resolvedThisMonth: ResolvedThisMonth[];
+  reportMonth: string;   // YYYY-MM that this snapshot represents
 };
 
 // Convert JSONB component_scores map into the [name,label,score] tuple array
@@ -119,7 +138,14 @@ function ratingFromScore(s: number | null): string {
   return 'Poor';
 }
 
-export async function fetchReportSnapshot(clientShortCode: string = 'KGF'): Promise<ReportSnapshot> {
+function daysBetween(fromIso: string | null, toDate: Date = new Date()): number | null {
+  if (!fromIso) return null;
+  const from = new Date(fromIso);
+  if (isNaN(from.getTime())) return null;
+  return Math.floor((toDate.getTime() - from.getTime()) / (24 * 60 * 60 * 1000));
+}
+
+export async function fetchReportSnapshot(clientShortCode: string = 'KGF', reportMonth?: string): Promise<ReportSnapshot> {
   const sb = supabaseServer;
 
   // 1. Client
@@ -159,7 +185,7 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF'): Prom
       .select(`property_id, status, severity, resolved_at, identified_at,
         property:property_id ( short_code, client_id )`),
     sb.from('defects')
-      .select(`defect_number, title, description, severity, status, identified_at,
+      .select(`defect_number, title, description, severity, status, identified_at, photo_urls,
         property:property_id ( short_code, client_id ),
         space:space_id ( name )`)
       .in('status', ['open', 'work_ordered'])
@@ -236,7 +262,7 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF'): Prom
   }
   const defectCounts = Object.values(countsMap);
 
-  // Open defects with detail
+  // Open defects with detail — includes days-open and first photo URL
   const openDefects: OpenDefect[] = (openDefectRows || [])
     .filter((d: any) => d.property && d.property.client_id === clientId)
     .map((d: any) => ({
@@ -247,7 +273,82 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF'): Prom
       severity: d.severity,
       identified_at: d.identified_at?.slice(0, 10) || null,
       description: d.description || '',
+      photo_urls: Array.isArray(d.photo_urls) ? d.photo_urls : [],
+      days_open: daysBetween(d.identified_at),
     }));
+
+  // --- Resolved this month per property ---
+  const month = reportMonth || (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  })();
+  const [monthYear, monthNum] = month.split('-').map(Number);
+  const monthStart = new Date(monthYear, monthNum - 1, 1).toISOString();
+  const monthEnd = new Date(monthYear, monthNum, 1).toISOString();
+
+  const { data: resolvedRows } = await sb
+    .from('defects')
+    .select(`property:property_id ( short_code, client_id )`)
+    .eq('status', 'resolved')
+    .gte('resolved_at', monthStart)
+    .lt('resolved_at', monthEnd);
+
+  const resolvedMap: Record<string, number> = {};
+  for (const p of properties) resolvedMap[p.short_code] = 0;
+  for (const r of (resolvedRows || []) as any[]) {
+    if (!r.property || r.property.client_id !== clientId) continue;
+    resolvedMap[r.property.short_code] = (resolvedMap[r.property.short_code] || 0) + 1;
+  }
+  const resolvedThisMonth: ResolvedThisMonth[] = Object.entries(resolvedMap)
+    .map(([short_code, count]) => ({ short_code, count }));
+
+  // --- Compliance calendar — next 60 days ---
+  const now = new Date();
+  const sixtyDaysOut = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
+  const complianceEvents: ComplianceEvent[] = [];
+
+  // Service contracts with next_service_date in window
+  for (const sc of serviceContracts) {
+    if (!sc.next_service_date) continue;
+    const d = new Date(sc.next_service_date);
+    if (isNaN(d.getTime())) continue;
+    if (d <= sixtyDaysOut) {
+      const days = Math.floor((d.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
+      complianceEvents.push({
+        short_code: sc.short_code,
+        kind: 'service_contract',
+        label: sc.contract_name,
+        detail: `${sc.discipline || 'Service'}${sc.provider_name ? ` · ${sc.provider_name}` : ''}`,
+        due_date: sc.next_service_date,
+        days_until: days,
+      });
+    }
+  }
+
+  // Assets with next_service_due_at in window
+  const { data: assetsForPm } = await sb
+    .from('assets')
+    .select(`name, asset_type, next_service_due_at,
+      property:property_id ( short_code, client_id )`)
+    .eq('active', true)
+    .not('next_service_due_at', 'is', null)
+    .lt('next_service_due_at', sixtyDaysOut.toISOString().slice(0, 10));
+  for (const a of (assetsForPm || []) as any[]) {
+    if (!a.property || a.property.client_id !== clientId) continue;
+    const d = new Date(a.next_service_due_at);
+    if (isNaN(d.getTime())) continue;
+    const days = Math.floor((d.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
+    complianceEvents.push({
+      short_code: a.property.short_code,
+      kind: 'asset_pm',
+      label: a.name,
+      detail: a.asset_type,
+      due_date: a.next_service_due_at,
+      days_until: days,
+    });
+  }
+
+  complianceEvents.sort((a, b) => a.days_until - b.days_until);
 
   // Asset summary
   const assetMap: Record<string, AssetSummaryRow> = {};
@@ -275,5 +376,8 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF'): Prom
     openDefects,
     assetSummary,
     serviceContracts,
+    complianceEvents,
+    resolvedThisMonth,
+    reportMonth: month,
   };
 }
