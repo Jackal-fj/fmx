@@ -323,13 +323,20 @@ async function imageParagraph(url: string, maxWidth = 1400): Promise<Paragraph |
   const buf = await fetchImageAsBuffer(url);
   if (!buf) return null;
   try {
-    // Use fixed dimensions; docx will scale. We aim for ~200x150 in report body.
+    // Detect image type from URL extension so docx's discriminated union is
+    // satisfied. Default to JPEG since Quick Add compresses everything to JPG.
+    const ext = (url.split('.').pop() || 'jpg').toLowerCase();
+    const type = ext === 'png' ? 'png'
+               : ext === 'gif' ? 'gif'
+               : ext === 'bmp' ? 'bmp'
+               : 'jpg';
+    const imageOptions: any = {
+      data: buf,
+      transformation: { width: 180, height: 135 },
+      type,
+    };
     return new Paragraph({
-      children: [new ImageRun({
-        // @ts-expect-error — docx typing across versions varies for buffer input
-        data: buf,
-        transformation: { width: 180, height: 135 },
-      })],
+      children: [new ImageRun(imageOptions)],
     });
   } catch {
     return null;
