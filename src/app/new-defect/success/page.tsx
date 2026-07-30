@@ -23,7 +23,7 @@ export default function DefectCreatedPage({
       <p className="text-3xl font-mono font-bold text-navy mb-8">{ref || '—'}</p>
 
       <p className="text-sm text-muted mb-8">
-        The new defect is on the dashboard now and will appear in next month's report automatically.
+        The new defect is on the dashboard now and will appear in next month&apos;s report automatically.
       </p>
 
       <div className="flex flex-col gap-3">
