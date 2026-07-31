@@ -2,6 +2,7 @@
 
 import { supabaseServer } from '@/lib/supabase';
 import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
 
 type CreateResult = {
   ok: boolean;
@@ -114,6 +115,8 @@ export async function createAsset(formData: FormData): Promise<CreateResult> {
     console.error('Asset insert failed:', error);
     return { ok: false, error: `Insert failed: ${error?.message || 'unknown'}` };
   }
+
+  revalidatePath('/assets');
 
   redirect(`/new-asset/success?id=${encodeURIComponent(asset.id)}&name=${encodeURIComponent(asset.name)}&key=${encodeURIComponent(key)}`);
 }

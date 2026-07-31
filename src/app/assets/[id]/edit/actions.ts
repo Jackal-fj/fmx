@@ -2,6 +2,7 @@
 
 import { supabaseServer } from '@/lib/supabase';
 import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
 
 type UpdateResult = { ok: boolean; error?: string };
 
@@ -94,6 +95,10 @@ export async function updateAsset(formData: FormData): Promise<UpdateResult> {
     console.error('Asset update failed:', error);
     return { ok: false, error: `Update failed: ${error.message}` };
   }
+
+  // Bust caches so the redirect lands on fresh data
+  revalidatePath(`/assets/${assetId}`);
+  revalidatePath('/assets');
 
   redirect(`/assets/${encodeURIComponent(assetId)}?key=${encodeURIComponent(key)}&saved=1`);
 }
