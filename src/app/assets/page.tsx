@@ -4,12 +4,17 @@ import Badge, { ratingTone } from '@/components/badge';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AssetsList() {
+export default async function AssetsList({
+  searchParams,
+}: {
+  searchParams: { deleted?: string };
+}) {
   // Server component reads the secret directly from env so the action buttons
   // appear when the env is configured. The key is included in links so the
   // destination routes (gated server-side) succeed without an extra hop.
   const key = process.env.QUICK_ADD_SECRET || '';
   const quickAddEnabled = !!key;
+  const deletedName = searchParams.deleted;
 
   const { data: assets } = await supabaseServer
     .from('assets')
@@ -27,6 +32,11 @@ export default async function AssetsList() {
 
   return (
     <div>
+      {deletedName && (
+        <div className="mb-4 rounded-md border border-orange-300 bg-orange-50 px-4 py-2 text-sm text-orange-900 flex items-center gap-2">
+          <span>Asset <span className="font-semibold">{deletedName}</span> deleted.</span>
+        </div>
+      )}
       <div className="flex items-baseline justify-between mb-6 gap-4 flex-wrap">
         <h1 className="text-2xl font-bold text-navy">Assets</h1>
         {quickAddEnabled && (

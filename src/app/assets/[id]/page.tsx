@@ -58,7 +58,7 @@ export default async function AssetDetail({
   const { data: events } = await supabaseServer
     .from('asset_service_events')
     .select(`
-      id, serviced_at, serviced_by, condition_before, condition_after, notes, photo_urls, source,
+      id, serviced_at, serviced_by, condition_before, condition_after, notes, photo_urls, source, event_type,
       provider:provider_id ( name, trade )
     `)
     .eq('asset_id', asset.id)
@@ -165,6 +165,11 @@ export default async function AssetDetail({
                   <div className="flex items-baseline justify-between mb-1 gap-2">
                     <div className="text-sm">
                       <span className="font-semibold">{fmtDate(e.serviced_at)}</span>
+                      {e.event_type && e.event_type !== 'service' && (
+                        <span className="ml-2 text-xs uppercase tracking-wide px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200">
+                          {e.event_type}
+                        </span>
+                      )}
                     </div>
                     {e.condition_after && (
                       <Badge tone={ratingTone(e.condition_after)}>{e.condition_after.toUpperCase()}</Badge>

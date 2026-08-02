@@ -69,6 +69,14 @@ function addMonthsToIso(iso: string, months: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+const EVENT_TYPES: Array<{ value: string; label: string; description: string }> = [
+  { value: 'service',     label: 'Service',     description: 'Routine PM or repair to keep the asset running.' },
+  { value: 'upgrade',     label: 'Upgrade',     description: 'Capability or spec improvement (e.g. capacity increase, control upgrade).' },
+  { value: 'replacement', label: 'Replacement', description: 'Full swap — old unit removed, new unit installed in same role.' },
+  { value: 'inspection',  label: 'Inspection',  description: 'Periodic checking or condition audit without service work.' },
+  { value: 'incident',    label: 'Incident',    description: 'Damage or failure event and post-incident repair.' },
+];
+
 export default function ServiceLogForm({
   asset,
   providers,
@@ -78,6 +86,7 @@ export default function ServiceLogForm({
   providers: ProviderOption[];
   secretKey: string;
 }) {
+  const [eventType, setEventType] = useState('service');
   const [servicedAt, setServicedAt] = useState(todayIso());
   const [providerId, setProviderId] = useState('');
   const [servicedBy, setServicedBy] = useState('');
@@ -150,6 +159,7 @@ export default function ServiceLogForm({
     }
     const fd = new FormData();
     fd.set('asset_id', asset.id);
+    fd.set('event_type', eventType);
     fd.set('serviced_at', servicedAt);
     fd.set('provider_id', providerId);
     fd.set('serviced_by', servicedBy.trim());
@@ -172,6 +182,8 @@ export default function ServiceLogForm({
 
   const submitting = busy || isPending;
 
+  const activeEventType = EVENT_TYPES.find(t => t.value === eventType) || EVENT_TYPES[0];
+
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       <div className="rounded-lg border bg-white p-4">
@@ -183,8 +195,27 @@ export default function ServiceLogForm({
         </div>
       </div>
 
+      {/* Event type selector — pick service / upgrade / replacement / inspection / incident */}
       <div>
-        <label className="block text-sm font-semibold text-navy mb-2">Service date <span className="text-red-600">*</span></label>
+        <label className="block text-sm font-semibold text-navy mb-2">
+          Event type <span className="text-red-600">*</span>
+        </label>
+        <select
+          value={eventType}
+          onChange={e => setEventType(e.target.value)}
+          className="w-full rounded-md border bg-white p-3 text-sm"
+        >
+          {EVENT_TYPES.map(t => (
+            <option key={t.value} value={t.value}>{t.label}</option>
+          ))}
+        </select>
+        <p className="text-xs text-muted mt-1">{activeEventType.description}</p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-navy mb-2">
+          {eventType === 'inspection' ? 'Inspection date' : eventType === 'incident' ? 'Incident date' : 'Event date'} <span className="text-red-600">*</span>
+        </label>
         <input type="date" value={servicedAt} onChange={e => setServicedAt(e.target.value)} required
                className="w-full rounded-md border bg-white p-3 text-sm" />
       </div>
@@ -269,7 +300,7 @@ export default function ServiceLogForm({
 
       <button type="submit" disabled={submitting}
               className="w-full rounded-md bg-navy text-white font-semibold py-3 disabled:opacity-50">
-        {submitting ? 'Saving…' : 'Log service event'}
+        {submitting ? 'Saving…' : `Log ${activeEventType.label.toLowerCase()} event`}
       </button>
     </form>
   );

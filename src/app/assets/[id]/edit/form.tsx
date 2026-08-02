@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition, useRef, useMemo } from 'react';
-import { updateAsset } from './actions';
+import { updateAsset, deleteAsset } from './actions';
 
 type AssetData = {
   id: string;
@@ -328,7 +328,84 @@ export default function EditAssetForm({
               className="w-full rounded-md bg-navy text-white font-semibold py-3 disabled:opacity-50">
         {submitting ? 'Saving…' : 'Save changes'}
       </button>
+
+      {/* -------- Danger zone -------- */}
+      <DeleteZone assetId={asset.id} assetName={asset.name} secretKey={secretKey} />
     </form>
+  );
+}
+
+function DeleteZone({ assetId, assetName, secretKey }: {
+  assetId: string;
+  assetName: string;
+  secretKey: string;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [isPending, startTransition] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+
+  function handleDelete() {
+    setErr(null);
+    const fd = new FormData();
+    fd.set('asset_id', assetId);
+    fd.set('key', secretKey);
+    startTransition(async () => {
+      try {
+        const result = await deleteAsset(fd);
+        if (result && !result.ok) setErr(result.error || 'Delete failed.');
+      } catch (e: any) {
+        if (e?.digest?.startsWith?.('NEXT_REDIRECT')) throw e;
+        setErr(e?.message || 'Delete failed.');
+      }
+    });
+  }
+
+  return (
+    <div className="mt-10 pt-6 border-t border-red-200">
+      <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+        <div className="text-sm font-semibold text-red-900 mb-1">Danger zone</div>
+        <p className="text-xs text-red-800 mb-3">
+          Deleting removes this asset permanently. Service history is deleted with it. Any linked
+          defects or work orders are preserved but lose their link to this asset. Retiring (via the
+          Active checkbox above) is safer if you just want to hide the asset from default lists.
+        </p>
+
+        {!confirming ? (
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            className="rounded-md border border-red-600 text-red-800 text-sm font-semibold px-3 py-1.5 hover:bg-red-600 hover:text-white"
+          >
+            Delete asset
+          </button>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-sm text-red-900 font-medium">
+              Really delete <span className="font-bold">{assetName}</span>? This cannot be undone.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={isPending}
+                className="rounded-md bg-red-700 text-white text-sm font-semibold px-3 py-1.5 hover:bg-red-800 disabled:opacity-50"
+              >
+                {isPending ? 'Deleting…' : 'Yes, delete permanently'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirming(false)}
+                disabled={isPending}
+                className="rounded-md border border-gray-300 text-gray-700 text-sm px-3 py-1.5 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            </div>
+            {err && <div className="text-xs text-red-900 mt-2">{err}</div>}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -15,6 +15,7 @@ export async function logServiceEvent(formData: FormData): Promise<LogResult> {
   const conditionNew  = (formData.get('condition_after') as string || '').trim();
   const notes         = (formData.get('notes') as string || '').trim();
   const nextDueDate   = (formData.get('next_service_due_at') as string || '').trim();
+  const eventType     = (formData.get('event_type') as string || 'service').trim();
   const key           = (formData.get('key') as string || '').trim();
 
   const required = process.env.QUICK_ADD_SECRET;
@@ -69,6 +70,9 @@ export async function logServiceEvent(formData: FormData): Promise<LogResult> {
     photoUrls.push(urlData.publicUrl);
   }
 
+  const allowedEventTypes = ['service', 'upgrade', 'replacement', 'inspection', 'incident'];
+  const safeEventType = allowedEventTypes.includes(eventType) ? eventType : 'service';
+
   // write service event row
   const { error: eventErr } = await supabaseServer
     .from('asset_service_events')
@@ -82,6 +86,7 @@ export async function logServiceEvent(formData: FormData): Promise<LogResult> {
       photo_urls: photoUrls,
       provider_id: providerId || null,
       source: 'service_log',
+      event_type: safeEventType,
     });
   if (eventErr) {
     console.error('Service event insert failed:', eventErr);

@@ -102,3 +102,55 @@ export async function updateAsset(formData: FormData): Promise<UpdateResult> {
 
   redirect(`/assets/${encodeURIComponent(assetId)}?key=${encodeURIComponent(key)}&saved=1`);
 }
+
+// -----------------------------------------------------------------------------
+// Delete asset — hard delete. Cascades service events; unlinks defects and
+// work orders (sets asset_id to null on those records so history survives).
+// Two-tap confirmation is handled client-side.
+// -----------------------------------------------------------------------------
+export async function deleteAsset(formData: FormData): Promise<UpdateResult> {
+  const assetId = (formData.get('asset_id') as string || '').trim();
+  const key     = (formData.get('key') as string || '').trim();
+
+  const required = process.env.QUICK_ADD_SECRET;
+  if (!required || key !== required) redirect('/');
+
+  if (!assetId) return { ok: false, error: 'Missing asset id.' };
+
+  // Load asset for the confirmation message + storage cleanup
+  const { data: asset } = await supabaseServer
+    .from('assets')
+    .select('id, name, photo_urls')
+    .eq('id', assetId)
+    .maybeSingle();
+  if (!asset) return { ok: false, error: 'Asset not found.' };
+
+  const { error } = await supabaseServer
+    .from('assets')
+    .delete()
+    .eq('id', assetId);
+
+  if (error) {
+    console.error('Asset delete failed:', error);
+    return { ok: false, error: `Delete failed: ${error.message}` };
+  }
+
+  // Best-effort cleanup of storage bucket for this asset. Failures here don't
+  // block the delete since the DB row is already gone — just log and move on.
+  try {
+    const { data: files } = await supabaseServer.storage
+      .from('asset-photos')
+      .list(assetId, { limit: 100 });
+    if (files && files.length > 0) {
+      const paths = files.map(f => `${assetId}/${f.name}`);
+      await supabaseServer.storage.from('asset-photos').remove(paths);
+    }
+  } catch (e) {
+    console.warn('Storage cleanup after asset delete failed:', e);
+  }
+
+  revalidatePath('/assets');
+  revalidatePath('/maintenance');
+
+  redirect(`/assets?deleted=${encodeURIComponent(asset.name)}`);
+}
