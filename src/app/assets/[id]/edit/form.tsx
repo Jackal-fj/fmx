@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useRef, useMemo } from 'react';
 import { updateAsset, deleteAsset } from './actions';
+import { suggestAssetCode } from '@/app/new-asset/actions';
 
 type AssetData = {
   id: string;
@@ -247,7 +248,25 @@ export default function EditAssetForm({
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Input label="Serial number" value={serialNumber} setValue={setSerialNumber} />
-          <Input label="Asset code" value={assetCode} setValue={setAssetCode} />
+          <div>
+            <div className="flex items-baseline justify-between mb-1">
+              <label className="block text-xs text-muted">Asset code</label>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!assetType.trim()) return;
+                  const suggested = await suggestAssetCode(asset.property_short_code, assetType.trim());
+                  if (suggested) setAssetCode(suggested);
+                }}
+                disabled={!assetType.trim()}
+                className="text-[11px] text-navy hover:underline disabled:text-gray-400 disabled:no-underline"
+              >
+                Suggest
+              </button>
+            </div>
+            <input type="text" value={assetCode} onChange={e => setAssetCode(e.target.value)}
+                   className="w-full rounded border bg-white p-2 text-sm" />
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Input label="Install date" value={installDate} setValue={setInstallDate} type="date" />

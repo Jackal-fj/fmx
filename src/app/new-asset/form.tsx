@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition, useRef, useMemo } from 'react';
-import { createAsset } from './actions';
+import { createAsset, suggestAssetCode } from './actions';
 
 type PropertyOption = { id: string; short_code: string; name: string };
 type SpaceOption = { id: string; property_id: string; name: string; short_code: string | null; space_type: string };
@@ -306,9 +306,24 @@ export default function NewAssetForm({
                    className="w-full rounded border bg-white p-2 text-sm" />
           </div>
           <div>
-            <label className="block text-xs text-muted mb-1">Asset code</label>
+            <div className="flex items-baseline justify-between mb-1">
+              <label className="block text-xs text-muted">Asset code</label>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!propertyCode || !assetType.trim()) return;
+                  const suggested = await suggestAssetCode(propertyCode, assetType.trim());
+                  if (suggested) setAssetCode(suggested);
+                }}
+                disabled={!propertyCode || !assetType.trim()}
+                className="text-[11px] text-navy hover:underline disabled:text-gray-400 disabled:no-underline"
+                title={!propertyCode || !assetType.trim() ? 'Pick property and asset type first' : 'Suggest next available code'}
+              >
+                Suggest
+              </button>
+            </div>
             <input type="text" value={assetCode} onChange={e => setAssetCode(e.target.value)}
-                   placeholder="e.g. AC-12 or GEN-1"
+                   placeholder="auto-generated on save if blank"
                    className="w-full rounded border bg-white p-2 text-sm" />
           </div>
         </div>

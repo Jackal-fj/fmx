@@ -3,6 +3,16 @@
 import { supabaseServer } from '@/lib/supabase';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
+import { generateAssetCode } from '@/lib/asset-code';
+
+export async function suggestAssetCode(propertyShortCode: string, assetType: string): Promise<string> {
+  if (!propertyShortCode || !assetType) return '';
+  try {
+    return await generateAssetCode(propertyShortCode, assetType);
+  } catch {
+    return '';
+  }
+}
 
 type CreateResult = {
   ok: boolean;
@@ -88,7 +98,17 @@ export async function createAsset(formData: FormData): Promise<CreateResult> {
     photo_urls: photoUrls,
   };
   if (spaceId) payload.space_id = spaceId;
-  if (assetCode) payload.asset_code = assetCode;
+  // Auto-generate asset_code if the user didn't provide one.
+  if (assetCode) {
+    payload.asset_code = assetCode;
+  } else {
+    try {
+      const generated = await generateAssetCode(prop.short_code, assetType);
+      if (generated) payload.asset_code = generated;
+    } catch (e) {
+      console.warn('Asset code auto-generation failed:', e);
+    }
+  }
   if (make) payload.make = make;
   if (model) payload.model = model;
   if (serialNumber) payload.serial_number = serialNumber;
