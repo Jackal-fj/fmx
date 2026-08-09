@@ -3,6 +3,7 @@
 import { supabaseServer } from '@/lib/supabase';
 import { fetchReportSnapshot } from '@/lib/reports/data';
 import { buildPropertyReport, buildPortfolioReport } from '@/lib/reports/generate';
+import { uploadReportToDropbox, isDropboxConfigured } from '@/lib/dropbox';
 import { redirect } from 'next/navigation';
 
 type Result = { ok: boolean; error?: string; count?: number };
@@ -75,6 +76,17 @@ async function saveOne(
     .from('reports')
     .upload(path, buffer, { contentType: DOCX_MIME, upsert: true });
   if (upErr) throw new Error(`Upload failed for ${filename}: ${upErr.message}`);
+
+  // Best-effort mirror to Dropbox. Non-blocking — Supabase is the source of
+  // truth; Dropbox is a convenience copy for local access via the synced
+  // Dropbox folder on Carl's Mac.
+  if (isDropboxConfigured()) {
+    const dbxResult = await uploadReportToDropbox(month, filename, buffer);
+    if (!dbxResult.ok) {
+      console.warn('Dropbox mirror failed:', filename, dbxResult.error);
+    }
+  }
+
   await supabaseServer.from('report_runs').insert({
     report_month: month,
     scope,
