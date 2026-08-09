@@ -37,10 +37,11 @@ export async function uploadReportToDropbox(
   };
 
   try {
-    // Wrap in Blob so fetch's BodyInit union accepts it. Blob is one of the
-    // official BodyInit types and can be constructed from a Buffer/Uint8Array.
-    const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
-    const body = new Blob([arrayBuffer], { type: 'application/octet-stream' });
+    // Copy into a fresh ArrayBuffer (not SharedArrayBuffer) so Blob typing
+    // accepts it. Blob is a valid BodyInit for fetch.
+    const ab = new ArrayBuffer(buffer.byteLength);
+    new Uint8Array(ab).set(buffer);
+    const body = new Blob([ab], { type: 'application/octet-stream' });
 
     const res = await fetch(UPLOAD_URL, {
       method: 'POST',

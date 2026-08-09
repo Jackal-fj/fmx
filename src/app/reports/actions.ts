@@ -81,10 +81,15 @@ async function saveOne(
   // truth; Dropbox is a convenience copy for local access via the synced
   // Dropbox folder on Carl's Mac.
   if (isDropboxConfigured()) {
+    console.log(`[reports] Dropbox mirror starting for ${filename}`);
     const dbxResult = await uploadReportToDropbox(month, filename, buffer);
-    if (!dbxResult.ok) {
-      console.warn('Dropbox mirror failed:', filename, dbxResult.error);
+    if (dbxResult.ok) {
+      console.log(`[reports] Dropbox mirror OK → ${dbxResult.path}`);
+    } else {
+      console.warn(`[reports] Dropbox mirror FAILED for ${filename}:`, dbxResult.error);
     }
+  } else {
+    console.log(`[reports] Dropbox not configured (no DROPBOX_ACCESS_TOKEN env var), skipping mirror for ${filename}`);
   }
 
   await supabaseServer.from('report_runs').insert({
