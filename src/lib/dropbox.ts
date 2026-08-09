@@ -37,6 +37,10 @@ export async function uploadReportToDropbox(
   };
 
   try {
+    // Convert Buffer to Uint8Array — fetch's body type doesn't accept Node Buffer
+    // in TS types (though it works fine at runtime). Uint8Array is universally accepted.
+    const body = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+
     const res = await fetch(UPLOAD_URL, {
       method: 'POST',
       headers: {
@@ -44,7 +48,7 @@ export async function uploadReportToDropbox(
         'Content-Type': 'application/octet-stream',
         'Dropbox-API-Arg': JSON.stringify(apiArg),
       },
-      body: buffer,
+      body,
     });
 
     if (!res.ok) {
