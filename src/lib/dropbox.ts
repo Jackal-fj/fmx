@@ -37,9 +37,10 @@ export async function uploadReportToDropbox(
   };
 
   try {
-    // Convert Buffer to Uint8Array — fetch's body type doesn't accept Node Buffer
-    // in TS types (though it works fine at runtime). Uint8Array is universally accepted.
-    const body = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    // Wrap in Blob so fetch's BodyInit union accepts it. Blob is one of the
+    // official BodyInit types and can be constructed from a Buffer/Uint8Array.
+    const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+    const body = new Blob([arrayBuffer], { type: 'application/octet-stream' });
 
     const res = await fetch(UPLOAD_URL, {
       method: 'POST',
