@@ -2,6 +2,7 @@
 
 import { supabaseServer } from '@/lib/supabase';
 import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
 import { sendText, sendImage, isConfigured, normaliseE164 } from '@/lib/whatsapp';
 
 type DispatchResult = { ok: boolean; error?: string };
@@ -102,6 +103,10 @@ export async function dispatchDefect(formData: FormData): Promise<DispatchResult
       // Don't hard-fail if a photo fails — text is already through.
     }
   }
+
+  revalidatePath(`/defects/${defect.defect_number}`);
+  revalidatePath(`/vendors/${provider.id}`);
+  revalidatePath('/defects');
 
   redirect(`/dispatch/success?ref=${encodeURIComponent(defect.defect_number)}&vendor=${encodeURIComponent(provider.name)}&key=${encodeURIComponent(key)}`);
 }

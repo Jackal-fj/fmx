@@ -2,6 +2,7 @@
 
 import { supabaseServer } from '@/lib/supabase';
 import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
 
 type LogResult = { ok: boolean; error?: string };
 
@@ -109,6 +110,11 @@ export async function logServiceEvent(formData: FormData): Promise<LogResult> {
     console.error('Asset post-service update failed:', updateErr);
     return { ok: false, error: `Asset update failed: ${updateErr.message}` };
   }
+
+  revalidatePath(`/assets/${asset.id}`);
+  revalidatePath('/assets');
+  revalidatePath('/service-log');
+  revalidatePath('/maintenance');
 
   redirect(`/service-log/success?asset_id=${encodeURIComponent(asset.id)}&key=${encodeURIComponent(key)}`);
 }

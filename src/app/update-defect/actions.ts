@@ -2,6 +2,7 @@
 
 import { supabaseServer } from '@/lib/supabase';
 import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
 
 type UpdateResult = {
   ok: boolean;
@@ -129,6 +130,15 @@ export async function updateDefect(formData: FormData): Promise<UpdateResult> {
     console.error('Defect status update failed:', defectErr);
     return { ok: false, error: `Status update failed: ${defectErr.message}` };
   }
+
+  // Bust caches so the redirected pages show fresh data.
+  revalidatePath('/defects');
+  revalidatePath(`/defects/${defect.defect_number}`);
+  revalidatePath('/update-defect');
+  revalidatePath('/');   // dashboard shows recent defects widget
+  revalidatePath('/maintenance');
+  // Property page can't be pinpointed without a lookup — invalidate the parent.
+  revalidatePath('/properties', 'layout');
 
   redirect(`/update-defect/success?ref=${encodeURIComponent(defect.defect_number)}&status=${encodeURIComponent(newStatus)}&key=${encodeURIComponent(key)}`);
 }

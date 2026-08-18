@@ -2,6 +2,7 @@
 
 import { supabaseServer } from '@/lib/supabase';
 import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
 
 type CreateResult = {
   ok: boolean;
@@ -131,6 +132,12 @@ export async function createDefect(formData: FormData): Promise<CreateResult> {
         .eq('id', defect.id);
     }
   }
+
+  // Bust caches so freshly logged defect appears immediately across the app.
+  revalidatePath('/defects');
+  revalidatePath('/update-defect');
+  revalidatePath('/');
+  revalidatePath('/properties', 'layout');
 
   redirect(`/new-defect/success?ref=${encodeURIComponent(defect.defect_number)}&key=${encodeURIComponent(key)}`);
 }
