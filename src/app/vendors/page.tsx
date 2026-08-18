@@ -1,13 +1,17 @@
 import Link from 'next/link';
+import { unstable_noStore as noStore } from 'next/cache';
 import { supabaseServer } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
 export default async function VendorsList({
   searchParams,
 }: {
   searchParams: { deleted?: string };
 }) {
+  noStore();
   const key = process.env.QUICK_ADD_SECRET || '';
   const quickAddEnabled = !!key;
   const deletedName = searchParams.deleted;

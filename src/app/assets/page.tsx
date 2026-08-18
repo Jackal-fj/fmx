@@ -1,8 +1,11 @@
 import Link from 'next/link';
+import { unstable_noStore as noStore } from 'next/cache';
 import { supabaseServer } from '@/lib/supabase';
 import Badge, { ratingTone } from '@/components/badge';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
 type StatusFilter = 'active' | 'retired' | 'all';
 type ConditionFilter = 'all' | 'excellent' | 'good' | 'adequate' | 'marginal' | 'poor' | 'failed';
@@ -65,6 +68,8 @@ export default async function AssetsList({
     type?: string;
   };
 }) {
+  noStore();
+
   const key = process.env.QUICK_ADD_SECRET || '';
   const quickAddEnabled = !!key;
   const deletedName = searchParams.deleted;

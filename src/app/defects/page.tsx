@@ -1,8 +1,11 @@
 import Link from 'next/link';
+import { unstable_noStore as noStore } from 'next/cache';
 import { supabaseServer } from '@/lib/supabase';
 import Badge, { severityTone } from '@/components/badge';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
 type StatusFilter = 'open' | 'resolved' | 'all';
 type SeverityFilter = 'all' | 'critical' | 'major' | 'moderate' | 'minor';
@@ -44,6 +47,8 @@ export default async function DefectsList({
 }: {
   searchParams: { status?: string; property?: string; severity?: string };
 }) {
+  noStore();   // hard opt-out of Data Cache for every request
+
   // Fetch properties list first so we can validate the property filter
   const { data: properties } = await supabaseServer
     .from('properties')

@@ -1,8 +1,11 @@
 import Link from 'next/link';
+import { unstable_noStore as noStore } from 'next/cache';
 import { supabaseServer } from '@/lib/supabase';
 import Badge, { severityTone } from '@/components/badge';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
 function statusLabel(s: string | null) {
   if (!s) return '—';
@@ -21,6 +24,7 @@ export default async function DefectDetail({
 }: {
   params: { number: string };
 }) {
+  noStore();
   // Fetch defect first so we can use its id to fetch updates in parallel next.
   const { data: defect } = await supabaseServer
     .from('defects')

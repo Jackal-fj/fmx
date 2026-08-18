@@ -1,8 +1,11 @@
 import Link from 'next/link';
+import { unstable_noStore as noStore } from 'next/cache';
 import { supabaseServer } from '@/lib/supabase';
 import Badge, { ratingTone } from '@/components/badge';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
 function fmtDate(s: string | null | undefined) {
   if (!s) return '—';
@@ -20,6 +23,7 @@ export default async function AssetDetail({
   params: { id: string };
   searchParams: { key?: string; saved?: string; service?: string };
 }) {
+  noStore();
   const key = process.env.QUICK_ADD_SECRET || '';
   const editEnabled = !!key;
   const savedFlag = searchParams.saved === '1';
