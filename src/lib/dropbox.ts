@@ -2,7 +2,7 @@
 //
 // Uses a scoped App-Folder or Full access token. Set DROPBOX_ACCESS_TOKEN in
 // Vercel env vars. Optional DROPBOX_REPORTS_ROOT overrides the default path
-// prefix (default: /FMX/04_CLIENTS/KGF/Client-wide/_reports).
+// prefix (default: /FMX/04_CLIENTS/KGF/Client-wide/4. Reporting/FMX).
 
 const UPLOAD_URL = 'https://content.dropboxapi.com/2/files/upload';
 
@@ -12,7 +12,7 @@ export function isDropboxConfigured(): boolean {
 
 export function dropboxReportPath(reportMonth: string, filename: string): string {
   const root = (process.env.DROPBOX_REPORTS_ROOT
-    || '/FMX/04_CLIENTS/KGF/Client-wide/_reports').replace(/\/+$/, '');
+    || '/FMX/04_CLIENTS/KGF/Client-wide/4. Reporting/FMX').replace(/\/+$/, '');
   return `${root}/${reportMonth}/${filename}`;
 }
 
