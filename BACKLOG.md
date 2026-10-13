@@ -5,8 +5,8 @@ Things we've talked about but haven't shipped. New ideas go here instead of bein
 ## Priority
 
 ### Inbound comms → platform
-- **Email ingestion (Postmark)** — PRIMARY INITIATING CHANNEL. Route `fmx@cmsfiji.com` → Postmark Inbound webhook → parse sender → create **draft defect** → attach image attachments → notify Carl by email with review link. Decision 2026-10-13: email is first touch, WhatsApp is follow-up only.
-- **Draft defect state** — new `draft` value in `defects.status`; approve/edit/reject page; promotion to `open`.
+- **Email ingestion — remaining work**: Postmark Transactional send-back notifications ("Draft DEF-xxxx created from KGF email — Review in FMX"); draft defect edit/promote UI (not just status change — title/property/severity edits too); non-image attachment handling (PDF quotes from vendors); LLM classification for messy senders.
+- **Client WhatsApp inbound** — only matters if we drop email as initiating channel. Deferred.
 - **WhatsApp interactive-list compliance checklist** — soft gate currently enforces 2-photo minimum. For critical defects (fire panel, backup power), consider Meta's `interactive` list messages so vendor must tap through confirmations like "panel reset: Y/N", "test alarm triggered: Y/N" before resolve is accepted.
 - **Photo backfill from pre-persistence period** — WhatsApp inbound photos received before the Supabase-persistence commit were stored only as Meta links which have now expired. Not recoverable, but worth a one-off DB cleanup to flag defects with dead `media_urls`.
 
@@ -31,6 +31,7 @@ Things we've talked about but haven't shipped. New ideas go here instead of bein
 
 ## Shipped (recent)
 
+- Postmark email ingestion: /api/email webhook, email_inbox table, draft defect state, sender/DEF-ref/property/severity classification, image attachment persistence, /email-inbox review page ← 2026-10-13
 - /new-defect accepts prefill URL params (title/description/property/severity/floor/area/category) + DEF-ref auto-redirect to detail page with highlight → one-tap flow from a KGF email via iOS Shortcut ← 2026-10-13
 - Raise WO quick-action on filtered defects list + highlight banner on defect detail when linked with ?highlight=1 ← 2026-10-13
 - WhatsApp inbound auto-promote defect status + 2-photo soft gate + Meta media download + Supabase Storage persistence + Dropbox per-property photo mirror ← 2026-10-13

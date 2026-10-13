@@ -11,6 +11,7 @@ const LINKS = [
   { href: '/assets',      label: 'Assets' },
   { href: '/maintenance', label: 'Maintenance' },
   { href: '/vendors',     label: 'Vendors' },
+  { href: '/email-inbox', label: 'Email Inbox' },
   { href: '/reports',     label: 'Reports' },
 ];
 
