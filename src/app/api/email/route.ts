@@ -19,6 +19,10 @@ import {
   detectProperty,
   detectSeverity,
   titleFromEmail,
+  topMessageOnly,
+  extractForwardedFrom,
+  isOperatorAddress,
+  isLikelySignatureImage,
   type PostmarkInbound,
 } from '@/lib/postmark';
 
@@ -62,20 +66,32 @@ export async function POST(request: NextRequest) {
   const fromName = payload.FromFull?.Name || null;
   const toEmail = payload.ToFull?.[0]?.Email || payload.To || null;
   const subject = payload.Subject || null;
-  const textBody = payload.StrippedTextReply || payload.TextBody || null;
+  const fullBody = payload.StrippedTextReply || payload.TextBody || null;
   const htmlBody = payload.HtmlBody || null;
 
-  // 4. Classification pass.
-  const defRef = extractDefectRef(subject, textBody);
-  const propertyGuess = detectProperty(subject, textBody);
-  const severityGuess = detectSeverity(subject, textBody);
+  // 4a. Trim multi-message threads down to the newest message. Classification
+  //     + description use the top message only; the full body stays in
+  //     email_inbox.text_body for audit.
+  const topBody = topMessageOnly(fullBody) || fullBody;
+
+  // 4b. If the direct sender is an operator address (Carl forwarding on behalf
+  //     of a tenant/KGF), pull the real reporter out of the forwarded block
+  //     and use that for classification and reporting.
+  const forwardedFrom = isOperatorAddress(fromEmail) ? extractForwardedFrom(fullBody) : null;
+  const effectiveFromEmail = forwardedFrom?.email || fromEmail;
+  const effectiveFromName = forwardedFrom?.name || fromName;
+
+  // 4c. Classification pass over subject + top message.
+  const defRef = extractDefectRef(subject, topBody);
+  const propertyGuess = detectProperty(subject, topBody);
+  const severityGuess = detectSeverity(subject, topBody);
 
   let matchedProviderId: string | null = null;
-  if (fromEmail) {
+  if (effectiveFromEmail) {
     const { data: provider } = await supabaseServer
       .from('providers')
       .select('id')
-      .ilike('email', fromEmail)
+      .ilike('email', effectiveFromEmail)
       .maybeSingle();
     if (provider) matchedProviderId = provider.id;
   }
@@ -86,19 +102,23 @@ export async function POST(request: NextRequest) {
     severity_guess: severityGuess,
     is_known_provider: !!matchedProviderId,
     attachment_count: payload.Attachments?.length || 0,
+    operator_forward: !!forwardedFrom,
+    effective_from: forwardedFrom ? `${forwardedFrom.name || ''} <${forwardedFrom.email}>` : null,
   };
 
   // 5. Insert the raw email row early — audit trail even if later steps fail.
+  //    Store the full body so nothing is lost; classification + description use
+  //    the trimmed top message.
   const { data: inboxRow, error: insErr } = await supabaseServer
     .from('email_inbox')
     .insert({
       postmark_message_id: messageId,
       received_at: payload.Date ? new Date(payload.Date).toISOString() : new Date().toISOString(),
-      from_email: fromEmail,
-      from_name: fromName,
+      from_email: effectiveFromEmail,
+      from_name: effectiveFromName,
       to_email: toEmail,
       subject,
-      text_body: textBody,
+      text_body: fullBody,
       html_body: htmlBody,
       classification,
       status: 'pending',
@@ -142,7 +162,7 @@ export async function POST(request: NextRequest) {
           provider_id: matchedProviderId,
           status_from: existingDefect.status,
           status_to: existingDefect.status,
-          notes: `[Email from ${fromName || fromEmail || 'unknown'}] ${subject || ''}\n\n${textBody || ''}`.slice(0, 4000),
+          notes: `[Email from ${effectiveFromName || effectiveFromEmail || 'unknown'}] ${subject || ''}\n\n${topBody || ''}`.slice(0, 4000),
           source: 'email_inbound',
         });
       }
@@ -160,12 +180,15 @@ export async function POST(request: NextRequest) {
         propertyId = prop?.id || null;
       }
 
-      const title = titleFromEmail(subject, textBody);
+      const title = titleFromEmail(subject, topBody);
+      // Description is the trimmed top-message only — Carl's review step is
+      // where he reads the deeper thread via /email-inbox's raw_payload link.
       const description = [
-        `(Imported from email, ${fromName || fromEmail || 'unknown sender'})`,
+        `(Imported from email — ${effectiveFromName || effectiveFromEmail || 'unknown sender'})`,
+        forwardedFrom ? `(Forwarded by ${fromName || fromEmail})` : null,
         '',
-        textBody || '(no body)',
-      ].join('\n').slice(0, 4000);
+        topBody || '(no body)',
+      ].filter(Boolean).join('\n').slice(0, 4000);
 
       const { data: newDefect, error: dErr } = await supabaseServer
         .from('defects')
@@ -203,6 +226,20 @@ export async function POST(request: NextRequest) {
           mime_type: att.ContentType,
           size: att.ContentLength,
           note: 'non-image attachment — not persisted (see raw_payload for base64)',
+        });
+        continue;
+      }
+      // Filter inline signature images — Gmail / Outlook / Apple Mail embed
+      // branded signature logos as inline attachments (image001.png, image.png,
+      // or anything with a ContentID). Keep them in the audit manifest but
+      // don't push to the defect photo gallery.
+      if (isLikelySignatureImage(att.Name, att.ContentLength, att.ContentID)) {
+        attachmentManifest.push({
+          filename: att.Name,
+          mime_type: att.ContentType,
+          size: att.ContentLength,
+          content_id: att.ContentID || null,
+          note: 'inline signature image — not added to defect gallery',
         });
         continue;
       }

@@ -59,17 +59,109 @@ export function detectProperty(...candidates: (string | null | undefined)[]): st
 }
 
 // -------------------------------------------------------------------------
-// Severity hints. Looser than defects.severity enum — these just feed the
-// draft prefill, Carl approves. 'critical' / 'urgent' / 'emergency' / 'fire'
-// / 'flood' / 'power out' → critical. 'leak' / 'broken' / 'not working' →
-// major. Otherwise null (default to 'moderate' at insert time).
+// Severity hints. Context-aware: a fire-related email about compliance
+// paperwork should NOT be flagged as a critical incident, so when admin
+// keywords are present we demote one tier (or skip if we'd otherwise be
+// mild). Carl approves at the review step anyway — this just keeps the
+// prefill honest.
 // -------------------------------------------------------------------------
+const ADMIN_CONTEXT_RE = /\b(certificate|certification|compliance|training|renewal|application|procedure|renew|licens|audit|insur|inspection\s+report)\b/i;
+
 export function detectSeverity(...candidates: (string | null | undefined)[]): 'critical' | 'major' | 'moderate' | 'minor' | null {
   const blob = candidates.filter(Boolean).join(' ').toLowerCase();
-  if (/\b(critical|urgent|emergency|fire|flood|power\s*out|evacuat|safety)\b/.test(blob)) return 'critical';
-  if (/\b(leak|broken|not\s*working|dangerous|failed|outage|burst)\b/.test(blob)) return 'major';
-  if (/\b(minor|small|cosmetic|tidy|clean)\b/.test(blob)) return 'minor';
-  return null;
+  const isAdmin = ADMIN_CONTEXT_RE.test(blob);
+
+  let hit: 'critical' | 'major' | 'moderate' | 'minor' | null = null;
+  if (/\b(critical|urgent|emergency|fire|flood|power\s*out|evacuat|safety)\b/.test(blob)) hit = 'critical';
+  else if (/\b(leak|broken|not\s*working|dangerous|failed|outage|burst)\b/.test(blob)) hit = 'major';
+  else if (/\b(minor|small|cosmetic|tidy|clean)\b/.test(blob)) hit = 'minor';
+
+  if (!hit) return null;
+  if (!isAdmin) return hit;
+
+  // Admin context — demote one tier.
+  if (hit === 'critical') return 'major';
+  if (hit === 'major') return 'moderate';
+  return hit;   // minor stays minor
+}
+
+// -------------------------------------------------------------------------
+// Trim a forwarded or reply email body down to the newest message only.
+// Detects Gmail's "---------- Forwarded message ---------", Outlook's
+// "From: ... Sent: ... To: ... Subject:" header block, and the generic
+// "On [date] at [time] [name] wrote:" delimiter. Everything before the
+// delimiter is kept; the quoted history is dropped (still available in
+// the raw email_inbox row for audit).
+// -------------------------------------------------------------------------
+const QUOTE_DELIMITERS = [
+  /\n-{3,}\s*Forwarded message\s*-{3,}/i,
+  /\n-{3,}\s*Original message\s*-{3,}/i,
+  /\nFrom:\s+.+\nSent:\s+/i,                       // Outlook thread header
+  /\nFrom:\s+.+\nDate:\s+/i,                       // Alt Outlook forward
+  /\nOn\s+(Mon|Tue|Wed|Thu|Fri|Sat|Sun|\d{1,2}\s+\w+|\w+,?\s+\w+\s+\d{1,2}).{0,80}wrote:\s*$/im,
+  /\n>+\s*/,                                        // first quoted-reply marker
+];
+
+export function topMessageOnly(textBody: string | null | undefined): string {
+  if (!textBody) return '';
+  let earliest = textBody.length;
+  for (const re of QUOTE_DELIMITERS) {
+    const m = textBody.match(re);
+    if (m && m.index !== undefined && m.index < earliest) {
+      earliest = m.index;
+    }
+  }
+  return textBody.slice(0, earliest).trim();
+}
+
+// -------------------------------------------------------------------------
+// Extract the real reporter from a Gmail-style forward. When Carl forwards
+// a KGF email to fmx@, Postmark sees Carl as the sender; the actual
+// reporter is in the first "From:" line of the forwarded block.
+// -------------------------------------------------------------------------
+export function extractForwardedFrom(textBody: string | null | undefined): { email: string; name: string | null } | null {
+  if (!textBody) return null;
+  // Match "From: Name <email@domain>" or "From: email@domain" — first occurrence
+  // after a forward delimiter, OR anywhere in the body if no delimiter found.
+  const re = /From:\s+(?:(.+?)\s*<)?([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i;
+  const m = textBody.match(re);
+  if (!m) return null;
+  const name = (m[1] || '').trim() || null;
+  return { email: m[2].toLowerCase(), name };
+}
+
+// Operator addresses — mail from these senders is treated as an operator
+// forwarding on behalf of a real reporter. Expand later if more staff
+// forward on Carl's behalf.
+export function isOperatorAddress(email: string | null | undefined): boolean {
+  if (!email) return false;
+  const operators = (process.env.FMX_OPERATOR_EMAILS || 'carl@cmsfiji.com')
+    .toLowerCase()
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  return operators.includes(email.toLowerCase());
+}
+
+// Signature-logo detection. Three signals, any one triggers:
+//   1. Postmark reports a ContentID → image is inline (HTML <img src="cid:...">),
+//      which is nearly always a signature or branded header, never evidence.
+//      This is the cleanest signal.
+//   2. Filename matches image001/image002/image.png generic pattern AND is
+//      under 250KB — Outlook, Gmail native, Apple Mail all produce these.
+//   3. Phone photos from WhatsApp/Gmail come as IMG_1234.jpg, DSC_...,
+//      PXL_... — those are kept regardless of size.
+const INLINE_FILENAME_RE = /^(image\d{0,3}|logo|signature|banner|header|footer)\.(png|jpg|jpeg|gif|webp)$/i;
+const SIGNATURE_SIZE_LIMIT = 250 * 1024;   // 250KB — Human Rights-style logos run 127-200KB
+
+export function isLikelySignatureImage(
+  filename: string,
+  size: number,
+  contentId: string | null | undefined,
+): boolean {
+  if (contentId && contentId.trim().length > 0) return true;
+  if (INLINE_FILENAME_RE.test(filename) && size <= SIGNATURE_SIZE_LIMIT) return true;
+  return false;
 }
 
 // -------------------------------------------------------------------------
