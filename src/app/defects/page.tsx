@@ -65,13 +65,15 @@ export default async function DefectsList({
   const severity = parseSeverity(searchParams.severity);
   const property = parseProperty(searchParams.property, propertyCodes);
 
-  // Build the defect query with all three filters
+  // Build the defect query with all three filters.
+  // Drafts are hidden here — they live at /email-inbox until Carl promotes them.
   let query = supabaseServer
     .from('defects')
     .select(`
       defect_number, title, severity, status, identified_at, resolved_at,
       property:property_id ( short_code, name )
     `)
+    .neq('status', 'draft')
     .order('identified_at', { ascending: false })
     .limit(500);
 
@@ -91,10 +93,11 @@ export default async function DefectsList({
     }
   }
 
-  // Also pull all-status rows for count calculations
+  // Also pull all-status rows for count calculations (drafts excluded).
   const { data: allDefects } = await supabaseServer
     .from('defects')
-    .select('status, severity, property:property_id ( short_code )');
+    .select('status, severity, property:property_id ( short_code )')
+    .neq('status', 'draft');
 
   const { data: defects } = await query;
   const displayed = defects || [];

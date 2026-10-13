@@ -22,12 +22,14 @@ export default async function Dashboard() {
       .eq('active', true)
       .order('short_code'),
     sb.from('defects')
-      .select('property_id, status, severity'),
+      .select('property_id, status, severity')
+      .neq('status', 'draft'),
     sb.from('defects')
       .select(`
         defect_number, title, severity, identified_at,
         property:property_id ( short_code, name )
       `)
+      .neq('status', 'draft')
       .gte('identified_at', fourteenDaysAgo)
       .order('identified_at', { ascending: false })
       .limit(8),

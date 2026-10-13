@@ -26,7 +26,7 @@ export default async function PropertyDetail({ params }: { params: { code: strin
     { data: contracts },
   ] = await Promise.all([
     sb.from('condition_assessments').select('*').eq('property_id', property.id).order('assessed_at', { ascending: false }),
-    sb.from('defects').select('defect_number, title, severity, status, identified_at, description').eq('property_id', property.id).order('defect_number'),
+    sb.from('defects').select('defect_number, title, severity, status, identified_at, description').eq('property_id', property.id).neq('status', 'draft').order('defect_number'),
     sb.from('assets').select('asset_code, name, asset_type, make, model, current_condition').eq('property_id', property.id).eq('active', true).order('asset_code'),
     sb.from('service_contracts').select('contract_name, frequency, fee_amount, fee_currency, next_service_date, active').eq('property_id', property.id).eq('active', true),
   ]);

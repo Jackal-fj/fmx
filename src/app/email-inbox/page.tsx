@@ -99,7 +99,7 @@ export default async function EmailInboxPage({
                   <span className="ml-2 text-navy">{d.title}</span>
                 </div>
                 <Link
-                  href={`/update-defect/${encodeURIComponent(d.defect_number)}${keyParam}`}
+                  href={`/defects/${encodeURIComponent(d.defect_number)}/promote${keyParam}`}
                   className="text-xs px-2.5 py-1 rounded-md bg-navy text-white hover:bg-blue-900 whitespace-nowrap"
                 >
                   Review
@@ -174,7 +174,7 @@ export default async function EmailInboxPage({
                     <span className="text-muted">— {created.title}</span>
                     {created.status === 'draft' && quickAddKey && (
                       <Link
-                        href={`/update-defect/${encodeURIComponent(created.defect_number)}${keyParam}`}
+                        href={`/defects/${encodeURIComponent(created.defect_number)}/promote${keyParam}`}
                         className="ml-auto text-xs px-2 py-0.5 rounded bg-navy text-white hover:bg-blue-900"
                       >
                         Review & promote

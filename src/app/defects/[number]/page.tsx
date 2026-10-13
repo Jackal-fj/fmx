@@ -82,7 +82,21 @@ export default async function DefectDetail({
     <div className="max-w-3xl">
       <Link href="/defects" className="text-sm text-muted hover:text-navy">← Back to defects</Link>
 
-      {highlighted && defect.status !== 'resolved' && (
+      {defect.status === 'draft' && dispatchKey && (
+        <div className="mt-3 mb-1 rounded-md border-2 border-orange-400 bg-orange-50 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+          <div className="text-sm text-navy font-medium">
+            DRAFT — created from an email. Review the parsed fields before promoting to Open.
+          </div>
+          <Link
+            href={`/defects/${encodeURIComponent(defect.defect_number)}/promote?key=${encodeURIComponent(dispatchKey)}`}
+            className="text-xs px-3 py-1.5 rounded-md bg-navy text-white hover:bg-blue-900 whitespace-nowrap"
+          >
+            Review & promote
+          </Link>
+        </div>
+      )}
+
+      {highlighted && defect.status !== 'resolved' && defect.status !== 'draft' && (
         <div className="mt-3 mb-1 rounded-md border-2 border-navy bg-blue-50 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
           <div className="text-sm text-navy font-medium">
             {defect.defect_number} — ready to raise a work order?
