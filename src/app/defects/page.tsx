@@ -49,6 +49,10 @@ export default async function DefectsList({
 }) {
   noStore();   // hard opt-out of Data Cache for every request
 
+  const quickAddKey = process.env.QUICK_ADD_SECRET || '';
+  const canDispatch = !!quickAddKey;
+  const keyParam = canDispatch ? `?key=${encodeURIComponent(quickAddKey)}` : '';
+
   // Fetch properties list first so we can validate the property filter
   const { data: properties } = await supabaseServer
     .from('properties')
@@ -201,13 +205,17 @@ export default async function DefectsList({
                 <th className="text-left p-3">Status</th>
                 <th className="text-left p-3">Identified</th>
                 {status !== 'open' && <th className="text-left p-3">Resolved</th>}
+                {canDispatch && <th className="text-left p-3">Action</th>}
               </tr>
             </thead>
             <tbody>
-              {displayed.map((d: any) => (
+              {displayed.map((d: any) => {
+                const isOpenState = d.status === 'open' || d.status === 'work_ordered';
+                const highlightHref = `/defects/${encodeURIComponent(d.defect_number)}?highlight=1`;
+                return (
                 <tr key={d.defect_number} className="border-t hover:bg-gray-50">
                   <td className="p-3 font-mono text-xs">
-                    <Link href={`/defects/${encodeURIComponent(d.defect_number)}`} className="text-navy hover:underline">
+                    <Link href={highlightHref} className="text-navy hover:underline">
                       {d.defect_number}
                     </Link>
                   </td>
@@ -222,7 +230,7 @@ export default async function DefectsList({
                     <Badge tone={severityTone(d.severity)}>{(d.severity || '').toUpperCase()}</Badge>
                   </td>
                   <td className="p-3">
-                    <Link href={`/defects/${encodeURIComponent(d.defect_number)}`} className="text-navy hover:underline">
+                    <Link href={highlightHref} className="text-navy hover:underline">
                       {d.title}
                     </Link>
                   </td>
@@ -233,8 +241,23 @@ export default async function DefectsList({
                       {d.resolved_at ? d.resolved_at.slice(0, 10) : '—'}
                     </td>
                   )}
+                  {canDispatch && (
+                    <td className="p-3 whitespace-nowrap">
+                      {isOpenState ? (
+                        <Link
+                          href={`/dispatch/${encodeURIComponent(d.defect_number)}${keyParam}`}
+                          className="text-xs px-2.5 py-1 rounded-md bg-green-700 text-white hover:bg-green-800 inline-block"
+                        >
+                          Raise WO
+                        </Link>
+                      ) : (
+                        <span className="text-xs text-muted">—</span>
+                      )}
+                    </td>
+                  )}
                 </tr>
-              ))}
+              );
+              })}
             </tbody>
           </table>
         </div>

@@ -5,8 +5,50 @@
 // Meta docs: https://developers.facebook.com/docs/graph-api/webhooks
 
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { supabaseServer } from '@/lib/supabase';
-import { verifyWebhookSignature, normaliseE164 } from '@/lib/whatsapp';
+import {
+  verifyWebhookSignature,
+  normaliseE164,
+  fetchMediaBytes,
+  extensionFor,
+  sendText,
+  isConfigured as isWhatsAppConfigured,
+} from '@/lib/whatsapp';
+import { uploadDefectPhotoToDropbox, isDropboxConfigured } from '@/lib/dropbox';
+
+const MIN_PHOTOS_FOR_RESOLUTION = 2;
+
+// -------------------------------------------------------------------------
+// Status-change parsing — vendors reply in natural language. We treat clear
+// progress signals as status transitions; anything ambiguous stays an open
+// defect and Carl handles it manually.
+// -------------------------------------------------------------------------
+const RESOLVED_KEYWORDS = [
+  'done', 'resolved', 'fixed', 'completed', 'complete', 'finished',
+  'repaired', 'sorted', 'closed', 'all good', 'sorted out',
+];
+const WORK_ORDERED_KEYWORDS = [
+  'started', 'on it', 'en route', 'otw', 'on the way', 'on my way',
+  'scheduled', 'booked', 'coming', 'attending', 'tomorrow', 'later today',
+  'this afternoon', 'this morning', 'will attend', 'will come', 'will fix',
+  'quote', 'quotation',
+];
+
+function detectStatusTransition(body: string | null): 'resolved' | 'work_ordered' | null {
+  if (!body) return null;
+  const text = body.toLowerCase();
+  for (const kw of RESOLVED_KEYWORDS) {
+    // word-boundary-ish — avoid matching 'undone' or 'closed-circuit'
+    const re = new RegExp(`(^|[^a-z])${kw.replace(/\s/g, '\\s+')}($|[^a-z])`, 'i');
+    if (re.test(text)) return 'resolved';
+  }
+  for (const kw of WORK_ORDERED_KEYWORDS) {
+    const re = new RegExp(`(^|[^a-z])${kw.replace(/\s/g, '\\s+')}($|[^a-z])`, 'i');
+    if (re.test(text)) return 'work_ordered';
+  }
+  return null;
+}
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -83,7 +125,10 @@ async function ingestInboundMessage(msg: any, value: any) {
   const type = msg.type || 'text';
 
   let body: string | null = null;
-  let mediaUrls: string[] = [];
+  // Meta sends a media_id (not a public URL). We'll download the bytes after
+  // provider+defect matching, then persist to Supabase Storage and (optionally)
+  // mirror to Dropbox. The final persisted URLs land in mediaUrls.
+  const mediaIds: { id: string; kind: 'image' | 'video' | 'document' | 'audio' }[] = [];
 
   switch (type) {
     case 'text':
@@ -91,20 +136,20 @@ async function ingestInboundMessage(msg: any, value: any) {
       break;
     case 'image':
       body = msg.image?.caption || null;
-      if (msg.image?.link) mediaUrls.push(msg.image.link);
+      if (msg.image?.id) mediaIds.push({ id: msg.image.id, kind: 'image' });
       break;
     case 'video':
       body = msg.video?.caption || null;
-      if (msg.video?.link) mediaUrls.push(msg.video.link);
+      if (msg.video?.id) mediaIds.push({ id: msg.video.id, kind: 'video' });
       break;
     case 'document':
       body = msg.document?.caption || msg.document?.filename || null;
-      if (msg.document?.link) mediaUrls.push(msg.document.link);
+      if (msg.document?.id) mediaIds.push({ id: msg.document.id, kind: 'document' });
       break;
     case 'audio':
     case 'voice':
-      if (msg.audio?.link || msg.voice?.link) {
-        mediaUrls.push(msg.audio?.link || msg.voice?.link);
+      if (msg.audio?.id || msg.voice?.id) {
+        mediaIds.push({ id: msg.audio?.id || msg.voice?.id, kind: 'audio' });
       }
       break;
     case 'button':
@@ -152,6 +197,20 @@ async function ingestInboundMessage(msg: any, value: any) {
     if (lastOutbound?.defect_id) defectId = lastOutbound.defect_id;
   }
 
+  // ---------------------------------------------------------------------
+  // Download + persist any attached media BEFORE we insert the message row,
+  // so media_urls contains durable Supabase Storage URLs, not short-lived
+  // Meta links. Also mirrors to Dropbox under the defect's property folder.
+  // ---------------------------------------------------------------------
+  const defectContext = defectId ? await loadDefectContext(defectId) : null;
+  const mediaUrls: string[] = [];
+  if (mediaIds.length > 0) {
+    for (const m of mediaIds) {
+      const persisted = await persistInboundMedia(m.id, m.kind, defectContext);
+      if (persisted) mediaUrls.push(persisted);
+    }
+  }
+
   await supabaseServer.from('whatsapp_messages').insert({
     direction: 'inbound',
     from_number: from,
@@ -165,6 +224,224 @@ async function ingestInboundMessage(msg: any, value: any) {
     status: 'received',
     metadata: { message: msg, value_context: value?.contacts },
   });
+
+  // ---------------------------------------------------------------------
+  // Auto-promote defect status if the vendor's message signals progress.
+  // Only runs when we matched both a provider AND an open defect.
+  // ---------------------------------------------------------------------
+  if (providerId && defectId && defectContext) {
+    const transition = detectStatusTransition(body);
+    if (transition) {
+      try {
+        await maybePromoteDefect(defectContext, providerId, transition, body, mediaUrls, from);
+      } catch (e) {
+        console.error('Failed to promote defect status from WhatsApp', e);
+      }
+    } else if (mediaUrls.length > 0) {
+      // Media without status language — attach to defect gallery.
+      try {
+        await appendDefectPhotos(defectContext, mediaUrls);
+      } catch (e) {
+        console.error('Failed to append defect photos', e);
+      }
+    }
+  }
+}
+
+// -------------------------------------------------------------------------
+// Load the defect + its property short_code once so we can route the Dropbox
+// mirror to the right property folder.
+// -------------------------------------------------------------------------
+type DefectContext = {
+  id: string;
+  defect_number: string;
+  status: string | null;
+  photo_urls: string[];
+  property_short_code: string;
+};
+
+async function loadDefectContext(defectId: string): Promise<DefectContext | null> {
+  const { data } = await supabaseServer
+    .from('defects')
+    .select(`
+      id, defect_number, status, photo_urls,
+      property:property_id ( short_code )
+    `)
+    .eq('id', defectId)
+    .maybeSingle();
+  if (!data) return null;
+  const prop = (data.property as unknown) as { short_code: string } | null;
+  return {
+    id: data.id,
+    defect_number: data.defect_number,
+    status: data.status,
+    photo_urls: Array.isArray(data.photo_urls) ? data.photo_urls : [],
+    property_short_code: prop?.short_code || 'KGF',
+  };
+}
+
+// -------------------------------------------------------------------------
+// Download a Meta-hosted media_id, upload to Supabase Storage, and mirror to
+// Dropbox under the defect's property folder. Returns the public Supabase URL.
+// -------------------------------------------------------------------------
+async function persistInboundMedia(
+  mediaId: string,
+  kind: 'image' | 'video' | 'document' | 'audio',
+  defect: DefectContext | null,
+): Promise<string | null> {
+  const fetched = await fetchMediaBytes(mediaId);
+  if (!fetched.ok || !fetched.bytes) {
+    console.warn(`[whatsapp] Media download failed for ${mediaId}:`, fetched.error);
+    return null;
+  }
+  const ext = extensionFor(fetched.mimeType || '');
+  const yearMonth = new Date().toISOString().slice(0, 7);  // YYYY-MM
+  const defectNo = defect?.defect_number || 'unlinked';
+  const filename = `${Date.now()}-${mediaId.slice(-8)}.${ext}`;
+  const storagePath = `${defectNo}/${yearMonth}/${filename}`;
+
+  // 1. Primary: upload to Supabase Storage (defect-photos bucket).
+  const { error: upErr } = await supabaseServer.storage
+    .from('defect-photos')
+    .upload(storagePath, fetched.bytes, {
+      contentType: fetched.mimeType,
+      upsert: false,
+    });
+  if (upErr) {
+    console.error(`[whatsapp] Supabase upload failed for ${storagePath}:`, upErr.message);
+    return null;
+  }
+
+  const { data: pub } = supabaseServer.storage
+    .from('defect-photos')
+    .getPublicUrl(storagePath);
+  const publicUrl = pub?.publicUrl || null;
+
+  // 2. Best-effort Dropbox mirror → /KGF/{Property}/02_Photos/{YYYY-MM}/{DEF-xxxx}/
+  if (defect && isDropboxConfigured()) {
+    const mirror = await uploadDefectPhotoToDropbox(
+      defect.property_short_code,
+      defect.defect_number,
+      yearMonth,
+      filename,
+      fetched.bytes,
+      fetched.mimeType || 'application/octet-stream',
+    );
+    if (!mirror.ok) {
+      console.warn(`[whatsapp] Dropbox photo mirror failed:`, mirror.error);
+    } else {
+      console.log(`[whatsapp] Dropbox photo mirror OK → ${mirror.path}`);
+    }
+  }
+
+  return publicUrl;
+}
+
+// -------------------------------------------------------------------------
+// Promote a defect's status based on vendor WhatsApp signal. Never downgrades
+// (resolved stays resolved). Enforces the 2-photo soft gate on resolution:
+// if the vendor says 'done' but fewer than MIN_PHOTOS_FOR_RESOLUTION photos
+// are on file, we promote to work_ordered instead and WhatsApp back asking
+// for the shortfall. Logs a defect_updates audit row either way.
+// -------------------------------------------------------------------------
+async function maybePromoteDefect(
+  defect: DefectContext,
+  providerId: string,
+  requestedStatus: 'resolved' | 'work_ordered',
+  notes: string | null,
+  newMediaUrls: string[],
+  vendorPhone: string,
+) {
+  // Guard rails: don't move backwards, don't thrash.
+  if (defect.status === 'resolved') return;
+  if (defect.status === 'work_ordered' && requestedStatus === 'work_ordered') return;
+
+  // Combined photo count after this message's attachments.
+  const combinedPhotos = [...defect.photo_urls, ...newMediaUrls];
+
+  // 2-photo soft gate for resolve. If short, downgrade this transition to
+  // work_ordered and ask the vendor for the remainder.
+  let nextStatus = requestedStatus;
+  let gatedForPhotos = false;
+  if (requestedStatus === 'resolved' && combinedPhotos.length < MIN_PHOTOS_FOR_RESOLUTION) {
+    nextStatus = 'work_ordered';
+    gatedForPhotos = true;
+  }
+
+  // If the gated downgrade would be a no-op (already work_ordered), still
+  // append photos but skip the status write.
+  const skipStatusWrite = gatedForPhotos && defect.status === 'work_ordered';
+
+  const now = new Date().toISOString();
+  const patch: Record<string, any> = {};
+  if (!skipStatusWrite) patch.status = nextStatus;
+  if (nextStatus === 'resolved') {
+    patch.resolved_at = now;
+    patch.resolution_notes = notes || 'Resolved via WhatsApp reply from vendor.';
+  }
+  if (newMediaUrls.length > 0) {
+    patch.photo_urls = combinedPhotos;
+  }
+
+  if (Object.keys(patch).length > 0) {
+    const { error: upErr } = await supabaseServer
+      .from('defects')
+      .update(patch)
+      .eq('id', defect.id);
+    if (upErr) {
+      console.error('Defect status update failed:', upErr);
+      return;
+    }
+  }
+
+  // Audit trail — always log the vendor's intent + what we actually did.
+  if (!skipStatusWrite || gatedForPhotos) {
+    await supabaseServer.from('defect_updates').insert({
+      defect_id: defect.id,
+      provider_id: providerId,
+      status_from: defect.status,
+      status_to: skipStatusWrite ? defect.status : nextStatus,
+      notes: gatedForPhotos
+        ? `${notes || '(vendor signalled done)'} — gated: only ${combinedPhotos.length}/${MIN_PHOTOS_FOR_RESOLUTION} photos received`
+        : (notes || null),
+      photo_urls: newMediaUrls.length ? newMediaUrls : null,
+      source: 'whatsapp_inbound',
+    });
+  }
+
+  // Nudge the vendor if we gated for photos.
+  if (gatedForPhotos && isWhatsAppConfigured()) {
+    const needed = MIN_PHOTOS_FOR_RESOLUTION - combinedPhotos.length;
+    try {
+      await sendText({
+        to: vendorPhone,
+        body: `Thanks. Before I can close ${defect.defect_number}, please send ${needed} more photo${needed === 1 ? '' : 's'} (ideally a before/after). Reply "done" after sending.`,
+      });
+    } catch (e) {
+      console.error('[whatsapp] Nudge send failed:', e);
+    }
+  }
+
+  // Bust Vercel edge cache for every page that reads this defect's state.
+  revalidatePath('/defects');
+  revalidatePath(`/defects/${defect.defect_number}`);
+  revalidatePath('/update-defect');
+  revalidatePath('/');
+  revalidatePath('/maintenance');
+  revalidatePath('/properties', 'layout');
+
+  console.log(
+    `[whatsapp] Auto-promoted ${defect.defect_number}: ${defect.status} → ${nextStatus}`,
+  );
+}
+
+async function appendDefectPhotos(defect: DefectContext, mediaUrls: string[]) {
+  await supabaseServer
+    .from('defects')
+    .update({ photo_urls: [...defect.photo_urls, ...mediaUrls] })
+    .eq('id', defect.id);
+  revalidatePath(`/defects/${defect.defect_number}`);
+  revalidatePath('/defects');
 }
 
 // -------------------------------------------------------------------------

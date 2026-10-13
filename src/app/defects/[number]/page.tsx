@@ -21,10 +21,13 @@ function statusTone(s: string | null): 'good' | 'warn' | 'bad' | 'muted' {
 
 export default async function DefectDetail({
   params,
+  searchParams,
 }: {
   params: { number: string };
+  searchParams: { highlight?: string };
 }) {
   noStore();
+  const highlighted = searchParams.highlight === '1';
   // Fetch defect first so we can use its id to fetch updates in parallel next.
   const { data: defect } = await supabaseServer
     .from('defects')
@@ -79,7 +82,23 @@ export default async function DefectDetail({
     <div className="max-w-3xl">
       <Link href="/defects" className="text-sm text-muted hover:text-navy">← Back to defects</Link>
 
-      <div className="flex items-baseline justify-between mt-2 mb-1 gap-3">
+      {highlighted && defect.status !== 'resolved' && (
+        <div className="mt-3 mb-1 rounded-md border-2 border-navy bg-blue-50 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+          <div className="text-sm text-navy font-medium">
+            {defect.defect_number} — ready to raise a work order?
+          </div>
+          {dispatchKey && (
+            <Link
+              href={`/dispatch/${encodeURIComponent(defect.defect_number)}?key=${encodeURIComponent(dispatchKey)}`}
+              className="text-xs px-3 py-1.5 rounded-md bg-green-700 text-white hover:bg-green-800 whitespace-nowrap"
+            >
+              Raise WO via WhatsApp
+            </Link>
+          )}
+        </div>
+      )}
+
+      <div className={`flex items-baseline justify-between mt-2 mb-1 gap-3 ${highlighted ? 'ring-2 ring-navy/20 rounded-md p-2 -mx-2' : ''}`}>
         <h1 className="text-2xl font-bold text-navy">{defect.title}</h1>
         <span className="font-mono text-xs text-muted whitespace-nowrap">{defect.defect_number}</span>
       </div>

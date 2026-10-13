@@ -18,6 +18,41 @@ export function dropboxReportPath(reportMonth: string, filename: string): string
 
 type UploadResult = { ok: true; path: string } | { ok: false; error: string };
 
+// Per-property defect-photo mirror path, matching Carl's folder structure:
+// /FMX/04_CLIENTS/KGF/{PropertyFullName}/02_Photos/{YYYY-MM}/{DEF-xxxx}/{filename}
+const PROPERTY_FOLDER_NAMES: Record<string, string> = {
+  GH: 'Gunu House',
+  KH: 'Korobasaga',
+  NH: 'Naibati House',
+};
+
+export function dropboxDefectPhotoPath(
+  propertyShortCode: string,
+  defectNumber: string,
+  yearMonth: string,
+  filename: string,
+): string {
+  const base = (process.env.DROPBOX_PHOTOS_ROOT
+    || '/FMX/04_CLIENTS/KGF').replace(/\/+$/, '');
+  const propertyFolder = PROPERTY_FOLDER_NAMES[propertyShortCode] || propertyShortCode;
+  return `${base}/${propertyFolder}/02_Photos/${yearMonth}/${defectNumber}/${filename}`;
+}
+
+export async function uploadDefectPhotoToDropbox(
+  propertyShortCode: string,
+  defectNumber: string,
+  yearMonth: string,
+  filename: string,
+  buffer: Buffer,
+  mimeType: string = 'application/octet-stream',
+): Promise<UploadResult> {
+  const token = process.env.DROPBOX_ACCESS_TOKEN;
+  if (!token) return { ok: false, error: 'DROPBOX_ACCESS_TOKEN not configured' };
+
+  const path = dropboxDefectPhotoPath(propertyShortCode, defectNumber, yearMonth, filename);
+  return uploadRaw(token, path, buffer, mimeType);
+}
+
 export async function uploadReportToDropbox(
   reportMonth: string,
   filename: string,
@@ -27,7 +62,18 @@ export async function uploadReportToDropbox(
   if (!token) return { ok: false, error: 'DROPBOX_ACCESS_TOKEN not configured' };
 
   const path = dropboxReportPath(reportMonth, filename);
+  return uploadRaw(token, path, buffer, 'application/octet-stream');
+}
 
+// -------------------------------------------------------------------------
+// Internal: raw Dropbox upload. Both report-mirror and photo-mirror use this.
+// -------------------------------------------------------------------------
+async function uploadRaw(
+  token: string,
+  path: string,
+  buffer: Buffer,
+  mimeType: string,
+): Promise<UploadResult> {
   const apiArg = {
     path,
     mode: 'overwrite',          // replace if a file with the same name exists
@@ -41,7 +87,7 @@ export async function uploadReportToDropbox(
     // accepts it. Blob is a valid BodyInit for fetch.
     const ab = new ArrayBuffer(buffer.byteLength);
     new Uint8Array(ab).set(buffer);
-    const body = new Blob([ab], { type: 'application/octet-stream' });
+    const body = new Blob([ab], { type: mimeType });
 
     const res = await fetch(UPLOAD_URL, {
       method: 'POST',

@@ -57,20 +57,32 @@ async function compressImage(file: File): Promise<File> {
   return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
 }
 
+type Prefill = {
+  title?: string;
+  description?: string;
+  property?: string;
+  severity?: string;
+  floor?: string;
+  area?: string;
+  category?: string;
+};
+
 export default function NewDefectForm({
   properties,
   secretKey,
+  prefill,
 }: {
   properties: PropertyOption[];
   secretKey: string;
+  prefill?: Prefill;
 }) {
-  const [propertyCode, setPropertyCode] = useState('');
-  const [title, setTitle] = useState('');
-  const [severity, setSeverity] = useState('moderate');
-  const [description, setDescription] = useState('');
-  const [floor, setFloor] = useState('');
-  const [area, setArea] = useState('');
-  const [category, setCategory] = useState('');
+  const [propertyCode, setPropertyCode] = useState(prefill?.property || '');
+  const [title, setTitle] = useState(prefill?.title || '');
+  const [severity, setSeverity] = useState(prefill?.severity || 'moderate');
+  const [description, setDescription] = useState(prefill?.description || '');
+  const [floor, setFloor] = useState(prefill?.floor || '');
+  const [area, setArea] = useState(prefill?.area || '');
+  const [category, setCategory] = useState(prefill?.category || '');
   const [previews, setPreviews] = useState<Preview[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
