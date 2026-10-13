@@ -23,6 +23,7 @@ import {
   extractForwardedFrom,
   isOperatorAddress,
   isLikelySignatureImage,
+  classifySender,
   type PostmarkInbound,
 } from '@/lib/postmark';
 
@@ -83,7 +84,15 @@ export async function POST(request: NextRequest) {
 
   // 4c. Classification pass over subject + top message.
   const defRef = extractDefectRef(subject, topBody);
-  const propertyGuess = detectProperty(subject, topBody);
+  const propertyGuessFromText = detectProperty(subject, topBody);
+
+  // 4d. Sender classification — map known KGF staff + tenant domains to a
+  //     reporter kind + property hint. Falls back to body-keyword detection.
+  const senderInfo = classifySender(effectiveFromEmail);
+  // Property order of precedence: explicit DEF-ref > body/subject keyword >
+  // tenant-domain mapping. (Tenant domain is a HINT, not a guarantee — a KH
+  // tenant might email about a NH issue, so prefer explicit keyword matches.)
+  const propertyGuess = propertyGuessFromText || senderInfo.tenant_property;
   const severityGuess = detectSeverity(subject, topBody);
 
   let matchedProviderId: string | null = null;
@@ -99,8 +108,11 @@ export async function POST(request: NextRequest) {
   const classification = {
     def_ref: defRef,
     property_guess: propertyGuess,
+    property_source: propertyGuessFromText ? 'body_keyword' : (senderInfo.tenant_property ? 'tenant_domain' : null),
     severity_guess: severityGuess,
     is_known_provider: !!matchedProviderId,
+    sender_kind: senderInfo.kind,                 // 'landlord' | 'tenant' | 'operator' | 'unknown'
+    sender_domain: senderInfo.domain,
     attachment_count: payload.Attachments?.length || 0,
     operator_forward: !!forwardedFrom,
     effective_from: forwardedFrom ? `${forwardedFrom.name || ''} <${forwardedFrom.email}>` : null,

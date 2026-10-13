@@ -147,8 +147,16 @@ export default async function EmailInboxPage({
                   {r.status === 'pending' && <Badge tone="warn">pending</Badge>}
                   {r.status === 'ignored' && <Badge tone="muted">ignored</Badge>}
                   {r.status === 'error' && <Badge tone="bad">error</Badge>}
+                  {cls.sender_kind === 'landlord' && <Badge tone="good">landlord</Badge>}
+                  {cls.sender_kind === 'tenant' && <Badge tone="good">tenant</Badge>}
+                  {cls.sender_kind === 'operator' && <Badge tone="muted">operator forward</Badge>}
+                  {cls.sender_kind === 'unknown' && <Badge tone="warn">unknown sender</Badge>}
                   {cls.def_ref && <Badge tone="muted">matched {cls.def_ref}</Badge>}
-                  {cls.property_guess && <Badge tone="muted">prop: {cls.property_guess}</Badge>}
+                  {cls.property_guess && (
+                    <Badge tone="muted">
+                      prop: {cls.property_guess}{cls.property_source === 'tenant_domain' ? ' (via domain)' : ''}
+                    </Badge>
+                  )}
                   {cls.severity_guess && <Badge tone="warn">severity guess: {cls.severity_guess}</Badge>}
                   {cls.is_known_provider && <Badge tone="good">known provider</Badge>}
                   {atts.length > 0 && <Badge tone="muted">{atts.length} attachment{atts.length === 1 ? '' : 's'}</Badge>}

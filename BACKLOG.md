@@ -31,6 +31,7 @@ Things we've talked about but haven't shipped. New ideas go here instead of bein
 
 ## Shipped (recent)
 
+- Email ingestion sender classification: hard-coded KGF/tenant domain map (kineticgrowth.fund → landlord; fhradc.org.fj + ppa.org.fj → tenant:NH; mhcd.gov.fj + mcs.gov.fj → tenant:KH; odpp.gov.fj → tenant:GH); property guess now uses body keywords first then falls back to tenant-domain hint; new badges on /email-inbox for sender_kind + property_source; override via FMX_SENDER_DOMAIN_MAP env var ← 2026-10-14
 - Email ingestion smarter classification: inline signature-image filter (ContentID + image.png / image\d{3} patterns); top-message-only description trim (drops quoted history + signatures from the draft but keeps raw in email_inbox); operator-forward detection (Carl forwards from carl@cmsfiji.com → real reporter extracted from the forwarded From: line); severity de-weight in admin/compliance contexts (fire + "renewal" → major not critical) ← 2026-10-14
 - Draft defect review+promote page at /defects/[number]/promote with full field edit (title/property/severity/floor/area/category/description) + source-email context panel + reject-draft danger zone; drafts hidden from main defects list + dashboard + property pages ← 2026-10-13
 - Postmark email ingestion: /api/email webhook, email_inbox table, draft defect state, sender/DEF-ref/property/severity classification, image attachment persistence, /email-inbox review page ← 2026-10-13

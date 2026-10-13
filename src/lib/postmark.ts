@@ -143,6 +143,63 @@ export function isOperatorAddress(email: string | null | undefined): boolean {
   return operators.includes(email.toLowerCase());
 }
 
+// -------------------------------------------------------------------------
+// Known-reporter + tenant→property map.
+//
+// Email domains map to a reporter kind:
+//   - 'landlord'  → KGF staff (no property fallback — body/subject decides)
+//   - 'tenant:XX' → mapped to a property short_code (NH, KH, GH)
+//
+// Hardcoded with the current KGF portfolio tenants. Override via env var
+// FMX_SENDER_DOMAIN_MAP as a comma-separated list of 'domain=kind' pairs,
+// e.g. 'kineticgrowth.fund=landlord,fhradc.org.fj=tenant:NH'.
+// -------------------------------------------------------------------------
+const DEFAULT_SENDER_DOMAIN_MAP: Record<string, string> = {
+  // KGF landlord
+  'kineticgrowth.fund': 'landlord',
+  'kineticenergyfund.com': 'landlord',
+  // Tenants at NH (Naibati House)
+  'fhradc.org.fj': 'tenant:NH',       // Human Rights & Anti-Discrimination Commission
+  'ppa.org.fj': 'tenant:NH',          // Pacific Power Association (Judy Yuen)
+  // Tenants at KH (Korobasaga House)
+  'mhcd.gov.fj': 'tenant:KH',         // Ministry of Housing
+  'mcs.gov.fj': 'tenant:KH',          // Ministry of Civil Service (Karalo Sila)
+  // Tenants at GH (Gunu House)
+  'odpp.gov.fj': 'tenant:GH',         // Office of the Director of Public Prosecutions
+};
+
+export type SenderClassification = {
+  kind: 'landlord' | 'tenant' | 'operator' | 'unknown';
+  tenant_property: string | null;    // short_code when kind='tenant'
+  domain: string | null;
+};
+
+export function classifySender(email: string | null | undefined): SenderClassification {
+  if (!email) return { kind: 'unknown', tenant_property: null, domain: null };
+
+  const domain = email.toLowerCase().split('@')[1] || null;
+  if (!domain) return { kind: 'unknown', tenant_property: null, domain: null };
+
+  if (isOperatorAddress(email)) {
+    return { kind: 'operator', tenant_property: null, domain };
+  }
+
+  // Merge env override + defaults.
+  const override: Record<string, string> = {};
+  for (const pair of (process.env.FMX_SENDER_DOMAIN_MAP || '').split(',')) {
+    const [d, k] = pair.split('=').map(s => s.trim().toLowerCase());
+    if (d && k) override[d] = k;
+  }
+  const kind = override[domain] || DEFAULT_SENDER_DOMAIN_MAP[domain] || null;
+  if (!kind) return { kind: 'unknown', tenant_property: null, domain };
+
+  if (kind === 'landlord') return { kind: 'landlord', tenant_property: null, domain };
+  if (kind.startsWith('tenant:')) {
+    return { kind: 'tenant', tenant_property: kind.slice('tenant:'.length).toUpperCase(), domain };
+  }
+  return { kind: 'unknown', tenant_property: null, domain };
+}
+
 // Signature-logo detection. Three signals, any one triggers:
 //   1. Postmark reports a ContentID → image is inline (HTML <img src="cid:...">),
 //      which is nearly always a signature or branded header, never evidence.
