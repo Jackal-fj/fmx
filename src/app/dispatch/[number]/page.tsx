@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { supabaseServer } from '@/lib/supabase';
-import { isConfigured } from '@/lib/whatsapp';
 import DispatchForm from './form';
 
 export const dynamic = 'force-dynamic';
@@ -58,18 +57,8 @@ export default async function DispatchPage({
       >← Back to defect</Link>
       <h1 className="text-2xl font-bold text-navy mt-2 mb-1">Dispatch to vendor</h1>
       <p className="text-sm text-muted mb-6">
-        Sends a WhatsApp message with defect details, and each photo as an image attachment.
+        Opens WhatsApp with the vendor + message pre-filled. Photo links are included in the message body.
       </p>
-
-      {!isConfigured() && (
-        <div className="rounded-lg border border-orange-300 bg-orange-50 p-4 text-sm text-orange-800 mb-6">
-          <div className="font-semibold mb-1">WhatsApp not yet configured</div>
-          <div>
-            The form below is ready but no messages will actually send until the WhatsApp Cloud API
-            credentials are added to Vercel. See the setup guide (README).
-          </div>
-        </div>
-      )}
 
       <DispatchForm
         defect={{
@@ -87,7 +76,6 @@ export default async function DispatchPage({
         }}
         providers={providers || []}
         secretKey={key}
-        whatsappConfigured={isConfigured()}
       />
     </div>
   );

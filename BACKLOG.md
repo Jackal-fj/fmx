@@ -10,12 +10,10 @@ Things we've talked about but haven't shipped. New ideas go here instead of bein
 - **WhatsApp interactive-list compliance checklist** — soft gate currently enforces 2-photo minimum. For critical defects (fire panel, backup power), consider Meta's `interactive` list messages so vendor must tap through confirmations like "panel reset: Y/N", "test alarm triggered: Y/N" before resolve is accepted.
 - **Photo backfill from pre-persistence period** — WhatsApp inbound photos received before the Supabase-persistence commit were stored only as Meta links which have now expired. Not recoverable, but worth a one-off DB cleanup to flag defects with dead `media_urls`.
 
-### WhatsApp production
-- Deregister CMS number from WhatsApp Business App
-- Add CMS number to Cloud API
-- Generate permanent System User token (not short-lived)
-- Add 4 WA env vars to Vercel (currently on test number)
-- End-to-end dispatch test from a real defect
+### WhatsApp (click-to-chat path, decided 2026-10-14)
+- Dispatch now uses wa.me click-to-chat — zero Meta setup required. Carl taps "Dispatch — open in WhatsApp", FMX logs the dispatch + flips status to work_ordered, browser redirects to wa.me which opens WhatsApp with vendor + message pre-filled.
+- Trade-off: vendor replies don't auto-flow back to FMX (Cloud API webhook stuff is still coded but not wired). Carl manually marks resolved from the Update Defect page.
+- If dispatch volume ever hits 20+/week, revisit the full Cloud API migration (deregister CMS number, Meta Business, System User token, webhook, template approval).
 
 ### Dropbox mirror hardening
 - Current token is Dropbox-generated short-lived — will silently stop working
@@ -31,6 +29,7 @@ Things we've talked about but haven't shipped. New ideas go here instead of bein
 
 ## Shipped (recent)
 
+- Dispatch to vendor refactored to wa.me click-to-chat: no Meta Cloud API dependency, server action logs the dispatch + flips defect to work_ordered + inserts a 'via_link' row in whatsapp_messages for thread continuity, then redirects browser to wa.me with vendor + message pre-filled. Photo URLs included as tappable links in the message body. ← 2026-10-14
 - Email ingestion sender classification: hard-coded KGF/tenant domain map (kineticgrowth.fund → landlord; fhradc.org.fj + ppa.org.fj → tenant:NH; mhcd.gov.fj + mcs.gov.fj → tenant:KH; odpp.gov.fj → tenant:GH); property guess now uses body keywords first then falls back to tenant-domain hint; new badges on /email-inbox for sender_kind + property_source; override via FMX_SENDER_DOMAIN_MAP env var ← 2026-10-14
 - Email ingestion smarter classification: inline signature-image filter (ContentID + image.png / image\d{3} patterns); top-message-only description trim (drops quoted history + signatures from the draft but keeps raw in email_inbox); operator-forward detection (Carl forwards from carl@cmsfiji.com → real reporter extracted from the forwarded From: line); severity de-weight in admin/compliance contexts (fire + "renewal" → major not critical) ← 2026-10-14
 - Draft defect review+promote page at /defects/[number]/promote with full field edit (title/property/severity/floor/area/category/description) + source-email context panel + reject-draft danger zone; drafts hidden from main defects list + dashboard + property pages ← 2026-10-13

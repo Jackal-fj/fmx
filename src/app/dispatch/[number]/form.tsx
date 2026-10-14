@@ -51,13 +51,18 @@ function composeInitialMessage(defect: DefectInfo, provider: ProviderOption | nu
     parts.push(``, defect.description);
   }
 
+  // Photo links — WhatsApp renders URLs as tappable. Vendor opens each in
+  // their browser. Up to 5 to keep the message compact.
+  if (defect.photos.length > 0) {
+    parts.push(``, `Photos:`);
+    defect.photos.slice(0, 5).forEach((url, i) => {
+      parts.push(`${i + 1}. ${url}`);
+    });
+  }
+
   parts.push(
     ``,
     `Please confirm receipt and let us know when you can attend.`,
-    ``,
-    defect.photos.length > 0
-      ? `${defect.photos.length} photo${defect.photos.length > 1 ? 's' : ''} attached below for reference.`
-      : `Photos will follow if available.`,
     ``,
     `— Carl / CMS Fiji`,
   );
@@ -69,16 +74,13 @@ export default function DispatchForm({
   defect,
   providers,
   secretKey,
-  whatsappConfigured,
 }: {
   defect: DefectInfo;
   providers: ProviderOption[];
   secretKey: string;
-  whatsappConfigured: boolean;
 }) {
   const [providerId, setProviderId] = useState('');
   const [message, setMessage] = useState('');
-  const [includePhotos, setIncludePhotos] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -110,14 +112,17 @@ export default function DispatchForm({
     fd.set('defect_id', defect.id);
     fd.set('provider_id', providerId);
     fd.set('message', message.trim());
-    fd.set('include_photos', includePhotos ? 'true' : 'false');
     fd.set('key', secretKey);
 
     startTransition(async () => {
       try {
+        // Server action logs the dispatch + flips status, then redirects
+        // the browser to wa.me — which opens WhatsApp on the phone.
         const result = await dispatchDefect(fd);
         if (result && !result.ok) setErr(result.error || 'Dispatch failed.');
       } catch (e: any) {
+        // NEXT_REDIRECT is Next.js's normal way of surfacing a redirect
+        // from a server action — rethrow so the redirect fires.
         if (e?.digest?.startsWith?.('NEXT_REDIRECT')) throw e;
         setErr(e?.message || 'Dispatch failed.');
       }
@@ -167,7 +172,7 @@ export default function DispatchForm({
               value={providerId}
               onChange={e => setProviderId(e.target.value)}
               required
-              className="w-full rounded-md border bg-white p-3 text-sm"
+              className="w-full rounded-md border bg-white p-3 text-base"
             >
               <option value="">Choose vendor…</option>
               {providers.map(p => (
@@ -197,29 +202,9 @@ export default function DispatchForm({
           className="w-full rounded-md border bg-white p-3 text-sm font-mono"
         />
         <p className="text-xs text-muted mt-1">
-          Auto-composed from defect data. Edit freely before sending.
+          Review and edit. Photo links are included — the vendor taps them to view each photo.
         </p>
       </div>
-
-      {/* Include photos */}
-      {defect.photos.length > 0 && (
-        <label className="flex items-center gap-3 rounded-lg border bg-white p-3 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={includePhotos}
-            onChange={e => setIncludePhotos(e.target.checked)}
-            className="w-4 h-4"
-          />
-          <div>
-            <div className="text-sm font-semibold text-navy">
-              Attach {defect.photos.length} photo{defect.photos.length > 1 ? 's' : ''}
-            </div>
-            <div className="text-xs text-muted">
-              Sent as separate WhatsApp image messages after the text.
-            </div>
-          </div>
-        </label>
-      )}
 
       {err && (
         <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">{err}</div>
@@ -228,16 +213,15 @@ export default function DispatchForm({
       <button
         type="submit"
         disabled={isPending || noVendorsWithWA}
-        className="w-full rounded-md bg-navy text-white font-semibold py-3 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full rounded-md bg-green-700 text-white font-semibold py-3 disabled:opacity-50 disabled:cursor-not-allowed text-base"
       >
-        {isPending ? 'Sending…' : (whatsappConfigured ? 'Send WhatsApp dispatch' : 'Preview only (not configured)')}
+        {isPending ? 'Opening WhatsApp…' : 'Dispatch — open in WhatsApp'}
       </button>
 
-      {!whatsappConfigured && (
-        <p className="text-xs text-muted text-center">
-          Submitting will fail until Cloud API credentials are added to Vercel env vars.
-        </p>
-      )}
+      <p className="text-xs text-muted text-center">
+        Opens WhatsApp with the vendor + message pre-filled. Tap <strong>Send</strong> in WhatsApp to deliver.
+        FMX will flip the defect to <strong>Work ordered</strong> as soon as you tap this button.
+      </p>
     </form>
   );
 }
