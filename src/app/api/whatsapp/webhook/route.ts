@@ -258,6 +258,7 @@ type DefectContext = {
   status: string | null;
   photo_urls: string[];
   property_short_code: string;
+  client_short_code: string;
 };
 
 async function loadDefectContext(defectId: string): Promise<DefectContext | null> {
@@ -265,18 +266,19 @@ async function loadDefectContext(defectId: string): Promise<DefectContext | null
     .from('defects')
     .select(`
       id, defect_number, status, photo_urls,
-      property:property_id ( short_code )
+      property:property_id ( short_code, client:client_id ( short_code ) )
     `)
     .eq('id', defectId)
     .maybeSingle();
   if (!data) return null;
-  const prop = (data.property as unknown) as { short_code: string } | null;
+  const prop = (data.property as unknown) as { short_code: string; client: { short_code: string } | null } | null;
   return {
     id: data.id,
     defect_number: data.defect_number,
     status: data.status,
     photo_urls: Array.isArray(data.photo_urls) ? data.photo_urls : [],
-    property_short_code: prop?.short_code || 'KGF',
+    property_short_code: prop?.short_code || 'UNKNOWN',
+    client_short_code: prop?.client?.short_code || 'KGF',
   };
 }
 
@@ -320,6 +322,7 @@ async function persistInboundMedia(
   // 2. Best-effort Dropbox mirror → /KGF/{Property}/02_Photos/{YYYY-MM}/{DEF-xxxx}/
   if (defect && isDropboxConfigured()) {
     const mirror = await uploadDefectPhotoToDropbox(
+      defect.client_short_code,
       defect.property_short_code,
       defect.defect_number,
       yearMonth,

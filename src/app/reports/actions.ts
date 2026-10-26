@@ -16,6 +16,7 @@ const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingm
 export async function generateReports(formData: FormData): Promise<Result> {
   const month  = (formData.get('month') as string || '').trim();
   const key    = (formData.get('key') as string || '').trim();
+  const client = ((formData.get('client') as string) || 'KGF').trim().toUpperCase();
   const scopes = formData.getAll('scopes').filter((v): v is string => typeof v === 'string');
 
   const required = process.env.QUICK_ADD_SECRET;
@@ -29,13 +30,13 @@ export async function generateReports(formData: FormData): Promise<Result> {
   }
 
   try {
-    const snap = await fetchReportSnapshot('KGF');
+    const snap = await fetchReportSnapshot(client);
     let count = 0;
 
     for (const scope of scopes) {
       if (scope === 'PORTFOLIO') {
         const r = await buildPortfolioReport(snap, month);
-        await saveOne(r.filename, r.buffer, month, r.scope, null, r.short_code);
+        await saveOne(client, r.filename, r.buffer, month, r.scope, null, r.short_code);
         count += 1;
       } else {
         const r = await buildPropertyReport(snap, scope, month);
@@ -50,12 +51,12 @@ export async function generateReports(formData: FormData): Promise<Result> {
             .maybeSingle();
           property_id = propRow?.id || null;
         }
-        await saveOne(r.filename, r.buffer, month, r.scope, property_id, r.short_code);
+        await saveOne(client, r.filename, r.buffer, month, r.scope, property_id, r.short_code);
         count += 1;
       }
     }
 
-    redirect(`/reports?key=${encodeURIComponent(key)}&saved=${count}&month=${month}`);
+    redirect(`/reports?key=${encodeURIComponent(key)}&saved=${count}&month=${month}&client=${encodeURIComponent(client)}`);
   } catch (e: any) {
     if (e?.digest?.startsWith?.('NEXT_REDIRECT')) throw e;
     console.error('Report generation failed:', e);
@@ -64,6 +65,7 @@ export async function generateReports(formData: FormData): Promise<Result> {
 }
 
 async function saveOne(
+  clientShortCode: string,
   filename: string,
   buffer: Buffer,
   month: string,
@@ -71,7 +73,8 @@ async function saveOne(
   property_id: string | null,
   short_code: string,
 ) {
-  const path = `${month}/${filename}`;
+  // Supabase Storage: client-scoped path so OOFI and KGF don't collide.
+  const path = `${clientShortCode}/${month}/${filename}`;
   const { error: upErr } = await supabaseServer.storage
     .from('reports')
     .upload(path, buffer, { contentType: DOCX_MIME, upsert: true });
@@ -82,7 +85,7 @@ async function saveOne(
   // Dropbox folder on Carl's Mac.
   if (isDropboxConfigured()) {
     console.log(`[reports] Dropbox mirror starting for ${filename}`);
-    const dbxResult = await uploadReportToDropbox(month, filename, buffer);
+    const dbxResult = await uploadReportToDropbox(clientShortCode, month, filename, buffer);
     if (dbxResult.ok) {
       console.log(`[reports] Dropbox mirror OK → ${dbxResult.path}`);
     } else {

@@ -33,8 +33,9 @@ function parseProperty(raw?: string, valid: string[] = []): string {
 }
 
 // Build a URL string for /defects with the given filter set, preserving defaults
-function buildHref(f: { status: StatusFilter; property: string; severity: SeverityFilter }): string {
+function buildHref(f: { status: StatusFilter; property: string; severity: SeverityFilter; client: string }): string {
   const params = new URLSearchParams();
+  if (f.client !== 'ALL') params.set('client', f.client);
   if (f.status !== 'open') params.set('status', f.status);
   if (f.property !== 'ALL') params.set('property', f.property);
   if (f.severity !== 'all') params.set('severity', f.severity);
@@ -45,7 +46,7 @@ function buildHref(f: { status: StatusFilter; property: string; severity: Severi
 export default async function DefectsList({
   searchParams,
 }: {
-  searchParams: { status?: string; property?: string; severity?: string };
+  searchParams: { status?: string; property?: string; severity?: string; client?: string };
 }) {
   noStore();   // hard opt-out of Data Cache for every request
 
@@ -53,25 +54,41 @@ export default async function DefectsList({
   const canDispatch = !!quickAddKey;
   const keyParam = canDispatch ? `?key=${encodeURIComponent(quickAddKey)}` : '';
 
-  // Fetch properties list first so we can validate the property filter
-  const { data: properties } = await supabaseServer
-    .from('properties')
-    .select('short_code, name')
-    .eq('active', true)
-    .order('short_code');
-  const propertyCodes = (properties || []).map(p => p.short_code);
+  // Fetch clients + properties for the filter chips
+  const [{ data: clients }, { data: allProperties }] = await Promise.all([
+    supabaseServer
+      .from('clients')
+      .select('short_code, name')
+      .eq('active', true)
+      .order('short_code'),
+    supabaseServer
+      .from('properties')
+      .select('short_code, name, client:client_id ( short_code )')
+      .eq('active', true)
+      .order('short_code'),
+  ]);
+
+  const clientCodes = (clients || []).map(c => c.short_code);
+  const client = (searchParams.client || 'ALL').toUpperCase();
+  const clientFilter = clientCodes.includes(client) ? client : 'ALL';
+
+  // Properties scoped to the selected client (or all if ALL).
+  const properties = (allProperties || []).filter((p: any) =>
+    clientFilter === 'ALL' || (p.client as { short_code: string } | null)?.short_code === clientFilter,
+  );
+  const propertyCodes = properties.map(p => p.short_code);
 
   const status = parseStatus(searchParams.status);
   const severity = parseSeverity(searchParams.severity);
   const property = parseProperty(searchParams.property, propertyCodes);
 
-  // Build the defect query with all three filters.
+  // Build the defect query with all four filters.
   // Drafts are hidden here — they live at /email-inbox until Carl promotes them.
   let query = supabaseServer
     .from('defects')
     .select(`
       defect_number, title, severity, status, identified_at, resolved_at,
-      property:property_id ( short_code, name )
+      property:property_id ( short_code, name, client:client_id ( short_code ) )
     `)
     .neq('status', 'draft')
     .order('identified_at', { ascending: false })
@@ -96,18 +113,29 @@ export default async function DefectsList({
   // Also pull all-status rows for count calculations (drafts excluded).
   const { data: allDefects } = await supabaseServer
     .from('defects')
-    .select('status, severity, property:property_id ( short_code )')
+    .select('status, severity, property:property_id ( short_code, client:client_id ( short_code ) )')
     .neq('status', 'draft');
 
   const { data: defects } = await query;
-  const displayed = defects || [];
+  // Apply client filter client-side (nested join filter in Supabase JS is awkward).
+  const displayed = (defects || []).filter((d: any) => {
+    if (clientFilter === 'ALL') return true;
+    return (d.property?.client as { short_code: string } | null)?.short_code === clientFilter;
+  });
 
   // Compute counts respecting the OTHER active filters (so each filter row's
   // counts reflect what you'd get if you clicked that specific chip).
   const rows = (allDefects || []) as any[];
-  function countBy(dim: 'status' | 'property' | 'severity', value: string): number {
+  function matchesClient(r: any, value: string): boolean {
+    if (value === 'ALL') return true;
+    return (r.property?.client as { short_code: string } | null)?.short_code === value;
+  }
+  function countBy(dim: 'status' | 'property' | 'severity' | 'client', value: string): number {
     return rows.filter(r => {
-      // Apply the OTHER two filters
+      // Apply the OTHER three filters
+      if (dim !== 'client') {
+        if (!matchesClient(r, clientFilter)) return false;
+      }
       if (dim !== 'status') {
         if (status === 'open' && !(r.status === 'open' || r.status === 'work_ordered')) return false;
         if (status === 'resolved' && r.status !== 'resolved') return false;
@@ -119,6 +147,7 @@ export default async function DefectsList({
         if (property !== 'ALL' && r.property?.short_code !== property) return false;
       }
       // Apply the value being counted for this dimension
+      if (dim === 'client') return matchesClient(r, value);
       if (dim === 'status') {
         if (value === 'open') return r.status === 'open' || r.status === 'work_ordered';
         if (value === 'resolved') return r.status === 'resolved';
@@ -132,7 +161,7 @@ export default async function DefectsList({
     }).length;
   }
 
-  const hasActiveFilters = status !== 'open' || property !== 'ALL' || severity !== 'all';
+  const hasActiveFilters = clientFilter !== 'ALL' || status !== 'open' || property !== 'ALL' || severity !== 'all';
 
   return (
     <div>
@@ -149,12 +178,31 @@ export default async function DefectsList({
         </div>
       </div>
 
+      {/* --- Client filter --- */}
+      {(clients || []).length > 1 && (
+        <FilterRow label="Client">
+          <Chip
+            href={buildHref({ status, property: 'ALL', severity, client: 'ALL' })}
+            active={clientFilter === 'ALL'}
+            label={`All (${countBy('client', 'ALL')})`}
+          />
+          {(clients || []).map(c => (
+            <Chip
+              key={c.short_code}
+              href={buildHref({ status, property: 'ALL', severity, client: c.short_code })}
+              active={clientFilter === c.short_code}
+              label={`${c.short_code} (${countBy('client', c.short_code)})`}
+            />
+          ))}
+        </FilterRow>
+      )}
+
       {/* --- Status filter --- */}
       <FilterRow label="Status">
         {(['open', 'resolved', 'all'] as StatusFilter[]).map(f => (
           <Chip
             key={f}
-            href={buildHref({ status: f, property, severity })}
+            href={buildHref({ status: f, property, severity, client: clientFilter })}
             active={status === f}
             label={`${STATUS_LABEL[f]} (${countBy('status', f)})`}
           />
@@ -164,14 +212,14 @@ export default async function DefectsList({
       {/* --- Property filter --- */}
       <FilterRow label="Property">
         <Chip
-          href={buildHref({ status, property: 'ALL', severity })}
+          href={buildHref({ status, property: 'ALL', severity, client: clientFilter })}
           active={property === 'ALL'}
           label={`All (${countBy('property', 'ALL')})`}
         />
         {(properties || []).map(p => (
           <Chip
             key={p.short_code}
-            href={buildHref({ status, property: p.short_code, severity })}
+            href={buildHref({ status, property: p.short_code, severity, client: clientFilter })}
             active={property === p.short_code}
             label={`${p.short_code} (${countBy('property', p.short_code)})`}
           />
@@ -183,7 +231,7 @@ export default async function DefectsList({
         {(['all', 'critical', 'major', 'moderate', 'minor'] as SeverityFilter[]).map(f => (
           <Chip
             key={f}
-            href={buildHref({ status, property, severity: f })}
+            href={buildHref({ status, property, severity: f, client: clientFilter })}
             active={severity === f}
             label={`${SEVERITY_LABEL[f]} (${countBy('severity', f)})`}
           />

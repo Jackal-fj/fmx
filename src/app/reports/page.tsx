@@ -26,8 +26,10 @@ export default async function ReportsPage({
   const generateEnabled = !!key;
   const urlKey = (searchParams.key || '').trim();
 
-  // Latest 200 reports across months + active KGF properties for the form
-  const [{ data: runs }, { data: properties }] = await Promise.all([
+  const selectedClient = ((searchParams as any).client || 'KGF').toString().toUpperCase();
+
+  // Latest reports + active properties for the selected client + the clients list
+  const [{ data: runs }, { data: properties }, { data: clients }] = await Promise.all([
     supabaseServer
       .from('report_runs')
       .select('id, report_month, scope, short_code, storage_path, filename, file_size_bytes, generated_at, generated_by')
@@ -37,10 +39,20 @@ export default async function ReportsPage({
       .limit(200),
     supabaseServer
       .from('properties')
+      .select('short_code, name, client:client_id ( short_code )')
+      .eq('active', true)
+      .order('short_code'),
+    supabaseServer
+      .from('clients')
       .select('short_code, name')
       .eq('active', true)
       .order('short_code'),
   ]);
+
+  // Filter properties shown in the generate form by the selected client.
+  const scopedProperties = (properties || []).filter((p: any) =>
+    (p.client as { short_code: string } | null)?.short_code === selectedClient,
+  );
 
   // Group by month
   type Group = { month: string; rows: any[] };
@@ -64,8 +76,32 @@ export default async function ReportsPage({
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-navy">Reports</h1>
         <p className="text-sm text-muted mt-1">
-          Monthly facility management reports for the KGF portfolio. Generate a fresh set for any month, download prior runs from the archive.
+          Monthly facility management reports. Pick a client, generate a fresh set for any month, or download prior runs.
         </p>
+      </div>
+
+      {/* Client picker */}
+      <div className="flex flex-wrap gap-2 mb-4 items-center">
+        <span className="text-xs uppercase tracking-wide text-muted mr-1">Client</span>
+        {(clients || []).map((c: any) => {
+          const active = c.short_code === selectedClient;
+          const href = urlKey
+            ? `/reports?key=${encodeURIComponent(urlKey)}&client=${encodeURIComponent(c.short_code)}`
+            : `/reports?client=${encodeURIComponent(c.short_code)}`;
+          return (
+            <Link
+              key={c.short_code}
+              href={href}
+              className={`text-xs px-3 py-1.5 rounded-full border transition ${
+                active
+                  ? 'bg-navy text-white border-navy'
+                  : 'bg-white text-muted border-gray-300 hover:border-navy hover:text-navy'
+              }`}
+            >
+              {c.short_code} — {c.name}
+            </Link>
+          );
+        })}
       </div>
 
       {savedNote && (
@@ -75,7 +111,7 @@ export default async function ReportsPage({
       )}
 
       {generateEnabled ? (
-        <GenerateForm properties={properties || []} secretKey={key} />
+        <GenerateForm properties={scopedProperties as any} secretKey={key} client={selectedClient} />
       ) : (
         <div className="mb-6 rounded-lg border border-orange-300 bg-orange-50 p-3 text-sm text-orange-800">
           Report generation is gated by QUICK_ADD_SECRET. Only visible when configured.

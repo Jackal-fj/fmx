@@ -13,9 +13,11 @@ function currentMonthIso(): string {
 export default function GenerateForm({
   properties,
   secretKey,
+  client,
 }: {
   properties: PropertyOption[];
   secretKey: string;
+  client: string;
 }) {
   const [month, setMonth] = useState(currentMonthIso());
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -51,6 +53,7 @@ export default function GenerateForm({
     const fd = new FormData();
     fd.set('month', month);
     fd.set('key', secretKey);
+    fd.set('client', client);
     selected.forEach(s => fd.append('scopes', s));
 
     startTransition(async () => {

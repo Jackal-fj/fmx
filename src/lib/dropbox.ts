@@ -1,8 +1,11 @@
 // Thin Dropbox v2 API wrapper for uploading generated reports.
 //
+// Multi-client: the mirror path uses the client short_code (KGF, OOFI, ...)
+// so each client's photos + reports land in their own folder under
+// /FMX/04_CLIENTS/.
+//
 // Uses a scoped App-Folder or Full access token. Set DROPBOX_ACCESS_TOKEN in
-// Vercel env vars. Optional DROPBOX_REPORTS_ROOT overrides the default path
-// prefix (default: /FMX/04_CLIENTS/KGF/Client-wide/4. Reporting/FMX).
+// Vercel env vars.
 
 const UPLOAD_URL = 'https://content.dropboxapi.com/2/files/upload';
 
@@ -10,35 +13,46 @@ export function isDropboxConfigured(): boolean {
   return !!process.env.DROPBOX_ACCESS_TOKEN;
 }
 
-export function dropboxReportPath(reportMonth: string, filename: string): string {
-  const root = (process.env.DROPBOX_REPORTS_ROOT
-    || '/FMX/04_CLIENTS/KGF/Client-wide/4. Reporting/FMX').replace(/\/+$/, '');
-  return `${root}/${reportMonth}/${filename}`;
+export function dropboxReportPath(
+  clientShortCode: string,
+  reportMonth: string,
+  filename: string,
+): string {
+  const base = (process.env.DROPBOX_CLIENTS_ROOT || '/FMX/04_CLIENTS').replace(/\/+$/, '');
+  // KGF uses the historical path with the "4. Reporting" sub-folder; new
+  // clients get a flatter structure. Override individually via env if needed.
+  if (clientShortCode === 'KGF') {
+    return `${base}/KGF/Client-wide/4. Reporting/FMX/${reportMonth}/${filename}`;
+  }
+  return `${base}/${clientShortCode}/Reports/${reportMonth}/${filename}`;
 }
 
 type UploadResult = { ok: true; path: string } | { ok: false; error: string };
 
-// Per-property defect-photo mirror path, matching Carl's folder structure:
-// /FMX/04_CLIENTS/KGF/{PropertyFullName}/02_Photos/{YYYY-MM}/{DEF-xxxx}/{filename}
+// Per-property defect-photo mirror path. Folder name resolution:
+// 1. Known KGF properties use the human-readable folder names Carl set up
+// 2. Everything else uses the property short_code as folder name
 const PROPERTY_FOLDER_NAMES: Record<string, string> = {
   GH: 'Gunu House',
   KH: 'Korobasaga',
   NH: 'Naibati House',
+  OOFI: 'OOFI Onsite Sales Facility',
 };
 
 export function dropboxDefectPhotoPath(
+  clientShortCode: string,
   propertyShortCode: string,
   defectNumber: string,
   yearMonth: string,
   filename: string,
 ): string {
-  const base = (process.env.DROPBOX_PHOTOS_ROOT
-    || '/FMX/04_CLIENTS/KGF').replace(/\/+$/, '');
+  const base = (process.env.DROPBOX_CLIENTS_ROOT || '/FMX/04_CLIENTS').replace(/\/+$/, '');
   const propertyFolder = PROPERTY_FOLDER_NAMES[propertyShortCode] || propertyShortCode;
-  return `${base}/${propertyFolder}/02_Photos/${yearMonth}/${defectNumber}/${filename}`;
+  return `${base}/${clientShortCode}/${propertyFolder}/02_Photos/${yearMonth}/${defectNumber}/${filename}`;
 }
 
 export async function uploadDefectPhotoToDropbox(
+  clientShortCode: string,
   propertyShortCode: string,
   defectNumber: string,
   yearMonth: string,
@@ -49,11 +63,12 @@ export async function uploadDefectPhotoToDropbox(
   const token = process.env.DROPBOX_ACCESS_TOKEN;
   if (!token) return { ok: false, error: 'DROPBOX_ACCESS_TOKEN not configured' };
 
-  const path = dropboxDefectPhotoPath(propertyShortCode, defectNumber, yearMonth, filename);
+  const path = dropboxDefectPhotoPath(clientShortCode, propertyShortCode, defectNumber, yearMonth, filename);
   return uploadRaw(token, path, buffer, mimeType);
 }
 
 export async function uploadReportToDropbox(
+  clientShortCode: string,
   reportMonth: string,
   filename: string,
   buffer: Buffer,
@@ -61,7 +76,7 @@ export async function uploadReportToDropbox(
   const token = process.env.DROPBOX_ACCESS_TOKEN;
   if (!token) return { ok: false, error: 'DROPBOX_ACCESS_TOKEN not configured' };
 
-  const path = dropboxReportPath(reportMonth, filename);
+  const path = dropboxReportPath(clientShortCode, reportMonth, filename);
   return uploadRaw(token, path, buffer, 'application/octet-stream');
 }
 
