@@ -15,7 +15,7 @@ import {
 
 import type {
   ReportSnapshot, Property, Fca, DefectCount, OpenDefect,
-  ServiceContractRow, AssetSummaryRow, ComplianceEvent,
+  ServiceContractRow, AssetSummaryRow, ComplianceEvent, ResolvedDefect,
 } from './data';
 
 const COMPANY = 'Commercial Management Solutions Pte Limited';
@@ -683,12 +683,19 @@ async function propertyReport(prop: Property, snap: ReportSnapshot, reportMonth:
     h1('Priority'),
     ...priorityList(propOpenDefects, 5),
 
-    // 3. OPEN ITEMS REGISTER -------------------------------------------------
+    // 3. COMPLETED THIS MONTH ------------------------------------------------
+    h1('Completed this month'),
+    ...completedThisMonthTable(
+      snap.resolvedDefects.filter(d => d.short_code === prop.short_code),
+      reportLabel,
+    ),
+
+    // 4. OPEN ITEMS REGISTER -------------------------------------------------
     h1('Open items'),
     p(`${propOpenDefects.length} item${propOpenDefects.length === 1 ? '' : 's'} open as at ${asOf}. Tap a reference to view the full record and photos in FMX.`, { italics: true, color: COLOR_MUTED, size: 18, spaceAfter: 120 }),
     ...minimalOpenItemsTable(propOpenDefects),
 
-    // 4. COMPLIANCE ----------------------------------------------------------
+    // 5. COMPLIANCE ----------------------------------------------------------
     h1('Compliance - next 60 days'),
     p(`Items due between ${asOf} and ${plusDays(asOf, 60)}.`, { italics: true, color: COLOR_MUTED, size: 18, spaceAfter: 120 }),
     ...minimalComplianceTable(snap.complianceEvents.filter(e => !e.short_code || e.short_code === prop.short_code), asOf),
@@ -777,6 +784,61 @@ function minimalOpenItemsTable(items: OpenDefect[]): (Paragraph | Table)[] {
     });
   });
   return [table([header, ...rows], cw)];
+}
+
+// Completed-this-month table — ref / severity / issue / location / resolved date / notes.
+// Includes a property column when includeProperty=true (portfolio reports only).
+function completedThisMonthTable(
+  items: ResolvedDefect[],
+  reportLabel: string,
+  opts: { includeProperty?: boolean } = {},
+): (Paragraph | Table)[] {
+  if (items.length === 0) {
+    return [p(`Nothing resolved in ${reportLabel}.`, { italics: true, color: COLOR_MUTED })];
+  }
+  const summary = p(
+    `${items.length} item${items.length === 1 ? '' : 's'} resolved during ${reportLabel}, most recent first.`,
+    { italics: true, color: COLOR_MUTED, size: 18, spaceAfter: 120 },
+  );
+  const prop = opts.includeProperty;
+  const cw = prop
+    ? [1600, 900, 1200, CONTENT_W - 8900, 2200, 3000]        // Ref | Prop | Sev | Issue | Resolved | Notes
+    : [1800, 1300, CONTENT_W - 8300, 2400, 2800];            // Ref | Sev | Issue | Resolved | Notes
+  const headerCells = prop ? [
+    cell('Ref',       { bold: true, fill: SHADE_HEADER, width: cw[0], color: BRAND_PURPLE }),
+    cell('Prop',      { bold: true, fill: SHADE_HEADER, width: cw[1], align: AlignmentType.CENTER, color: BRAND_PURPLE }),
+    cell('Severity',  { bold: true, fill: SHADE_HEADER, width: cw[2], align: AlignmentType.CENTER, color: BRAND_PURPLE }),
+    cell('Issue',     { bold: true, fill: SHADE_HEADER, width: cw[3], color: BRAND_PURPLE }),
+    cell('Resolved',  { bold: true, fill: SHADE_HEADER, width: cw[4], align: AlignmentType.CENTER, color: BRAND_PURPLE }),
+    cell('Notes',     { bold: true, fill: SHADE_HEADER, width: cw[5], color: BRAND_PURPLE }),
+  ] : [
+    cell('Ref',       { bold: true, fill: SHADE_HEADER, width: cw[0], color: BRAND_PURPLE }),
+    cell('Severity',  { bold: true, fill: SHADE_HEADER, width: cw[1], align: AlignmentType.CENTER, color: BRAND_PURPLE }),
+    cell('Issue',     { bold: true, fill: SHADE_HEADER, width: cw[2], color: BRAND_PURPLE }),
+    cell('Resolved',  { bold: true, fill: SHADE_HEADER, width: cw[3], align: AlignmentType.CENTER, color: BRAND_PURPLE }),
+    cell('Notes',     { bold: true, fill: SHADE_HEADER, width: cw[4], color: BRAND_PURPLE }),
+  ];
+  const header = new TableRow({ tableHeader: true, children: headerCells });
+  const rows = items.map((d, i) => {
+    const fill = i % 2 ? SHADE_ROW_ALT : undefined;
+    const notes = (d.resolution_notes || '-').slice(0, 160);
+    const rowCells = prop ? [
+      cell(d.defect_number, { width: cw[0], size: 18, fill }),
+      cell(d.short_code, { width: cw[1], align: AlignmentType.CENTER, size: 18, fill }),
+      cell(d.severity.toUpperCase(), { width: cw[2], align: AlignmentType.CENTER, color: severityColor(d.severity), bold: true, size: 18, fill }),
+      cell(d.title, { width: cw[3], size: 18, fill }),
+      cell(d.resolved_at, { width: cw[4], align: AlignmentType.CENTER, size: 18, color: OK_GREEN, fill }),
+      cell(notes, { width: cw[5], size: 16, fill }),
+    ] : [
+      cell(d.defect_number, { width: cw[0], size: 18, fill }),
+      cell(d.severity.toUpperCase(), { width: cw[1], align: AlignmentType.CENTER, color: severityColor(d.severity), bold: true, size: 18, fill }),
+      cell(d.title, { width: cw[2], size: 18, fill }),
+      cell(d.resolved_at, { width: cw[3], align: AlignmentType.CENTER, size: 18, color: OK_GREEN, fill }),
+      cell(notes, { width: cw[4], size: 16, fill }),
+    ];
+    return new TableRow({ children: rowCells });
+  });
+  return [summary, table([header, ...rows], cw)];
 }
 
 // Minimal compliance table — label, detail, due date, days-until as-at month-end.
@@ -888,12 +950,16 @@ async function portfolioReport(snap: ReportSnapshot, reportMonth: string): Promi
     h1('Priority'),
     ...priorityList(priorityItems, 8),
 
-    // 3. OPEN ITEMS REGISTER -------------------------------------------------
+    // 3. COMPLETED THIS MONTH ------------------------------------------------
+    h1('Completed this month - portfolio'),
+    ...completedThisMonthTable(snap.resolvedDefects, reportLabel, { includeProperty: true }),
+
+    // 4. OPEN ITEMS REGISTER -------------------------------------------------
     h1('Open items - portfolio'),
     p(`${priorityItems.length} item${priorityItems.length === 1 ? '' : 's'} open as at ${asOf}, ordered by severity then age.`, { italics: true, color: COLOR_MUTED, size: 18, spaceAfter: 120 }),
     ...minimalPortfolioItemsTable(priorityItems),
 
-    // 4. COMPLIANCE ----------------------------------------------------------
+    // 5. COMPLIANCE ----------------------------------------------------------
     h1('Compliance - next 60 days'),
     p(`Items due between ${asOf} and ${plusDays(asOf, 60)}.`, { italics: true, color: COLOR_MUTED, size: 18, spaceAfter: 120 }),
     ...minimalComplianceTable(snap.complianceEvents, asOf),

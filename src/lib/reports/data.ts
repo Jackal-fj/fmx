@@ -75,6 +75,16 @@ export type NewThisMonth = {
   count: number;
 };
 
+export type ResolvedDefect = {
+  short_code: string;
+  defect_number: string;
+  title: string;
+  severity: string;
+  space: string;
+  resolved_at: string;          // 'YYYY-MM-DD'
+  resolution_notes: string | null;
+};
+
 export type AssetSummaryRow = {
   short_code: string;
   asset_type: string;
@@ -106,6 +116,7 @@ export type ReportSnapshot = {
   complianceEvents: ComplianceEvent[];
   resolvedThisMonth: ResolvedThisMonth[];
   newThisMonth: NewThisMonth[];       // defects identified during the calendar month
+  resolvedDefects: ResolvedDefect[];  // full list of defects resolved during the month (ordered by resolved_at desc)
   reportMonth: string;                // YYYY-MM that this snapshot represents
   asOfDate: string;                   // ISO date at month-end used as the "as-at" reference for all queries
 };
@@ -315,18 +326,35 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF', repor
     }));
 
   // --- Resolved this month per property (resolved_at in [monthStart, monthEnd))
+  // Pull the full resolved rows (not just counts) so we can list them with
+  // notes in the report. Count map derives from this.
   const { data: resolvedRows } = await sb
     .from('defects')
-    .select(`property:property_id ( short_code, client_id )`)
+    .select(`
+      defect_number, title, severity, resolved_at, resolution_notes,
+      property:property_id ( short_code, client_id ),
+      space:space_id ( name )
+    `)
     .eq('status', 'resolved')
     .gte('resolved_at', monthStartIso)
-    .lt('resolved_at', asOfIso);
+    .lt('resolved_at', asOfIso)
+    .order('resolved_at', { ascending: false });
 
   const resolvedMap: Record<string, number> = {};
   for (const p of properties) resolvedMap[p.short_code] = 0;
+  const resolvedDefects: ResolvedDefect[] = [];
   for (const r of (resolvedRows || []) as any[]) {
     if (!r.property || r.property.client_id !== clientId) continue;
     resolvedMap[r.property.short_code] = (resolvedMap[r.property.short_code] || 0) + 1;
+    resolvedDefects.push({
+      short_code: r.property.short_code,
+      defect_number: r.defect_number,
+      title: r.title,
+      severity: r.severity,
+      space: r.space?.name || '-',
+      resolved_at: (r.resolved_at || '').slice(0, 10),
+      resolution_notes: r.resolution_notes,
+    });
   }
   const resolvedThisMonth: ResolvedThisMonth[] = Object.entries(resolvedMap)
     .map(([short_code, count]) => ({ short_code, count }));
@@ -422,6 +450,7 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF', repor
     complianceEvents,
     resolvedThisMonth,
     newThisMonth,
+    resolvedDefects,
     reportMonth: month,
     asOfDate: asOfIso.slice(0, 10),
   };
