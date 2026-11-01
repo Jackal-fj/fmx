@@ -29,6 +29,16 @@ export async function generateReports(formData: FormData): Promise<Result> {
     return { ok: false, error: 'Select at least one report to generate.' };
   }
 
+  // Hard block: can't generate a report for a month that hasn't ended yet.
+  // October 2026's report becomes available Nov 1 2026 (UTC midnight), etc.
+  const [my, mn] = month.split('-').map(Number);
+  const monthEnd = new Date(Date.UTC(my, mn, 1));
+  if (monthEnd > new Date()) {
+    const monthLabel = new Date(Date.UTC(my, mn - 1, 1)).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    const availableFrom = monthEnd.toISOString().slice(0, 10);
+    return { ok: false, error: `${monthLabel} is not complete yet. This report can be generated from ${availableFrom}.` };
+  }
+
   try {
     const snap = await fetchReportSnapshot(client);
     let count = 0;

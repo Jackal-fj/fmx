@@ -70,6 +70,11 @@ export type ResolvedThisMonth = {
   count: number;
 };
 
+export type NewThisMonth = {
+  short_code: string;
+  count: number;
+};
+
 export type AssetSummaryRow = {
   short_code: string;
   asset_type: string;
@@ -100,7 +105,9 @@ export type ReportSnapshot = {
   serviceContracts: ServiceContractRow[];
   complianceEvents: ComplianceEvent[];
   resolvedThisMonth: ResolvedThisMonth[];
-  reportMonth: string;   // YYYY-MM that this snapshot represents
+  newThisMonth: NewThisMonth[];       // defects identified during the calendar month
+  reportMonth: string;                // YYYY-MM that this snapshot represents
+  asOfDate: string;                   // ISO date at month-end used as the "as-at" reference for all queries
 };
 
 // Convert JSONB component_scores map into the [name,label,score] tuple array
@@ -138,15 +145,30 @@ function ratingFromScore(s: number | null): string {
   return 'Poor';
 }
 
-function daysBetween(fromIso: string | null, toDate: Date = new Date()): number | null {
+function daysBetween(fromIso: string | null, toDate: Date | string = new Date()): number | null {
   if (!fromIso) return null;
   const from = new Date(fromIso);
   if (isNaN(from.getTime())) return null;
-  return Math.floor((toDate.getTime() - from.getTime()) / (24 * 60 * 60 * 1000));
+  const to = typeof toDate === 'string' ? new Date(toDate) : toDate;
+  return Math.max(0, Math.floor((to.getTime() - from.getTime()) / (24 * 60 * 60 * 1000)));
 }
 
 export async function fetchReportSnapshot(clientShortCode: string = 'KGF', reportMonth?: string): Promise<ReportSnapshot> {
   const sb = supabaseServer;
+
+  // --- Resolve the "as-at" date -------------------------------------------
+  // Everything in a monthly report should reflect the state AT month-end,
+  // not at generation time. That way an October report generated on Nov 1
+  // vs Dec 15 contains the same figures.
+  const month = reportMonth || (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  })();
+  const [monthYear, monthNum] = month.split('-').map(Number);
+  const monthStart = new Date(Date.UTC(monthYear, monthNum - 1, 1));                    // 1st of month 00:00 UTC
+  const monthEnd   = new Date(Date.UTC(monthYear, monthNum, 1));                        // 1st of next month 00:00 UTC (exclusive)
+  const asOfIso    = monthEnd.toISOString();                                            // all "as-at" filters use this
+  const monthStartIso = monthStart.toISOString();
 
   // 1. Client
   const { data: clients } = await sb
@@ -158,7 +180,9 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF', repor
   const client = clients[0];
   const clientId = client.id;
 
-  // Fetch everything else in parallel
+  // Fetch everything else in parallel.
+  // IMPORTANT: all defect/FCA queries use asOfIso as their upper bound so the
+  // report always reflects the state AT month-end, not now.
   const [
     { data: propRows },
     { data: scRows },
@@ -177,18 +201,25 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF', repor
         property:property_id ( short_code ),
         provider:provider_id ( name )`)
       .eq('client_id', clientId),
+    // FCA: only assessments conducted on or before month-end
     sb.from('condition_assessments')
       .select(`assessed_at, overall_rating, numeric_score, summary, recommendations, photo_count, assessor_name, component_scores,
         property:property_id ( short_code, client_id )`)
+      .lte('assessed_at', asOfIso)
       .order('assessed_at', { ascending: false }),
+    // All defects (lifetime, for counts) — filtered by status timing below
     sb.from('defects')
       .select(`property_id, status, severity, resolved_at, identified_at,
-        property:property_id ( short_code, client_id )`),
+        property:property_id ( short_code, client_id )`)
+      .lte('identified_at', asOfIso),
+    // "Open at month-end" = identified before month-end AND
+    //    (not resolved yet OR resolved after month-end)
     sb.from('defects')
-      .select(`defect_number, title, description, severity, status, identified_at, photo_urls,
+      .select(`defect_number, title, description, severity, status, identified_at, resolved_at, photo_urls,
         property:property_id ( short_code, client_id ),
         space:space_id ( name )`)
-      .in('status', ['open', 'work_ordered'])
+      .lte('identified_at', asOfIso)
+      .or(`resolved_at.is.null,resolved_at.gte.${asOfIso}`)
       .order('defect_number'),
     sb.from('assets')
       .select(`asset_type, current_condition,
@@ -238,7 +269,10 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF', repor
   }
   fcas.sort((a, b) => a.short_code.localeCompare(b.short_code));
 
-  // Defect counts per property
+  // --- Defect counts per property — AS AT month-end ------------------------
+  // Status we care about is "state as of month-end" (not current status).
+  // A defect is "open-at-month-end" if resolved_at is NULL OR >= monthEnd.
+  // A defect is "resolved-by-month-end" if resolved_at < monthEnd.
   const countsMap: Record<string, DefectCount> = {};
   for (const p of properties) {
     countsMap[p.short_code] = {
@@ -250,10 +284,13 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF', repor
     if (!d.property || d.property.client_id !== clientId) continue;
     const c = countsMap[d.property.short_code];
     if (!c) continue;
-    if (d.status === 'open') c.open += 1;
-    if (d.status === 'work_ordered') c.work_ordered += 1;
-    if (d.status === 'resolved') c.resolved += 1;
-    if (d.status === 'open' || d.status === 'work_ordered') {
+    const wasResolvedByMonthEnd = d.resolved_at && new Date(d.resolved_at) < monthEnd;
+    if (wasResolvedByMonthEnd) {
+      c.resolved += 1;
+    } else {
+      // Open at month-end (treat work_ordered as a form of open)
+      c.open += 1;
+      if (d.status === 'work_ordered') c.work_ordered += 1;
       if (d.severity === 'critical') c.critical_open += 1;
       if (d.severity === 'major') c.major_open += 1;
       if (d.severity === 'moderate') c.moderate_open += 1;
@@ -262,36 +299,28 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF', repor
   }
   const defectCounts = Object.values(countsMap);
 
-  // Open defects with detail — includes days-open and first photo URL
+  // Open defects with detail — includes days-open as-at month-end.
   const openDefects: OpenDefect[] = (openDefectRows || [])
     .filter((d: any) => d.property && d.property.client_id === clientId)
     .map((d: any) => ({
       short_code: d.property.short_code,
       defect_number: d.defect_number,
-      space: d.space?.name || '—',
+      space: d.space?.name || '-',
       title: d.title,
       severity: d.severity,
       identified_at: d.identified_at?.slice(0, 10) || null,
       description: d.description || '',
       photo_urls: Array.isArray(d.photo_urls) ? d.photo_urls : [],
-      days_open: daysBetween(d.identified_at),
+      days_open: daysBetween(d.identified_at, monthEnd),
     }));
 
-  // --- Resolved this month per property ---
-  const month = reportMonth || (() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  })();
-  const [monthYear, monthNum] = month.split('-').map(Number);
-  const monthStart = new Date(monthYear, monthNum - 1, 1).toISOString();
-  const monthEnd = new Date(monthYear, monthNum, 1).toISOString();
-
+  // --- Resolved this month per property (resolved_at in [monthStart, monthEnd))
   const { data: resolvedRows } = await sb
     .from('defects')
     .select(`property:property_id ( short_code, client_id )`)
     .eq('status', 'resolved')
-    .gte('resolved_at', monthStart)
-    .lt('resolved_at', monthEnd);
+    .gte('resolved_at', monthStartIso)
+    .lt('resolved_at', asOfIso);
 
   const resolvedMap: Record<string, number> = {};
   for (const p of properties) resolvedMap[p.short_code] = 0;
@@ -302,42 +331,56 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF', repor
   const resolvedThisMonth: ResolvedThisMonth[] = Object.entries(resolvedMap)
     .map(([short_code, count]) => ({ short_code, count }));
 
-  // --- Compliance calendar — next 60 days ---
-  const now = new Date();
-  const sixtyDaysOut = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
+  // --- New raised this month per property (identified_at in [monthStart, monthEnd))
+  const newMap: Record<string, number> = {};
+  for (const p of properties) newMap[p.short_code] = 0;
+  for (const d of (allDefects || []) as any[]) {
+    if (!d.property || d.property.client_id !== clientId) continue;
+    if (!d.identified_at) continue;
+    const idt = new Date(d.identified_at);
+    if (idt >= monthStart && idt < monthEnd) {
+      newMap[d.property.short_code] = (newMap[d.property.short_code] || 0) + 1;
+    }
+  }
+  const newThisMonth: NewThisMonth[] = Object.entries(newMap)
+    .map(([short_code, count]) => ({ short_code, count }));
+
+  // --- Compliance calendar — 60 days FROM MONTH-END ------------------------
+  // So an October report lists everything due Oct 31 → Dec 30, regardless of
+  // when the report is generated.
+  const sixtyDaysOut = new Date(monthEnd.getTime() + 60 * 24 * 60 * 60 * 1000);
   const complianceEvents: ComplianceEvent[] = [];
 
-  // Service contracts with next_service_date in window
   for (const sc of serviceContracts) {
     if (!sc.next_service_date) continue;
     const d = new Date(sc.next_service_date);
     if (isNaN(d.getTime())) continue;
-    if (d <= sixtyDaysOut) {
-      const days = Math.floor((d.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
+    if (d >= monthEnd && d <= sixtyDaysOut) {
+      const days = Math.floor((d.getTime() - monthEnd.getTime()) / (24 * 60 * 60 * 1000));
       complianceEvents.push({
         short_code: sc.short_code,
         kind: 'service_contract',
         label: sc.contract_name,
-        detail: `${sc.discipline || 'Service'}${sc.provider_name ? ` · ${sc.provider_name}` : ''}`,
+        detail: `${sc.discipline || 'Service'}${sc.provider_name ? ` - ${sc.provider_name}` : ''}`,
         due_date: sc.next_service_date,
         days_until: days,
       });
     }
   }
 
-  // Assets with next_service_due_at in window
   const { data: assetsForPm } = await sb
     .from('assets')
     .select(`name, asset_type, next_service_due_at,
       property:property_id ( short_code, client_id )`)
     .eq('active', true)
     .not('next_service_due_at', 'is', null)
-    .lt('next_service_due_at', sixtyDaysOut.toISOString().slice(0, 10));
+    .gte('next_service_due_at', asOfIso.slice(0, 10))
+    .lte('next_service_due_at', sixtyDaysOut.toISOString().slice(0, 10));
   for (const a of (assetsForPm || []) as any[]) {
     if (!a.property || a.property.client_id !== clientId) continue;
     const d = new Date(a.next_service_due_at);
     if (isNaN(d.getTime())) continue;
-    const days = Math.floor((d.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
+    const days = Math.floor((d.getTime() - monthEnd.getTime()) / (24 * 60 * 60 * 1000));
     complianceEvents.push({
       short_code: a.property.short_code,
       kind: 'asset_pm',
@@ -378,6 +421,8 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF', repor
     serviceContracts,
     complianceEvents,
     resolvedThisMonth,
+    newThisMonth,
     reportMonth: month,
+    asOfDate: asOfIso.slice(0, 10),
   };
 }

@@ -1,4 +1,4 @@
-// FMX Monthly FM Report Generator v2 — polished CMS Fiji branding.
+// FMX Monthly FM Report Generator v2 - polished CMS Fiji branding.
 // - Cover page with CMS Fiji brand accent (dark purple #402D41)
 // - Executive summary as first interior page with headline KPIs
 // - Priority matrix highlighting critical/major items
@@ -59,12 +59,51 @@ function monthLabel(reportMonth: string): string {
 
 // ----- helpers --------------------------------------------------------------
 
+// Text sanitizer - strips typographic flourishes that print poorly in Word:
+//   em dash (-), en dash (–), bullet (•), section mark (§), smart quotes
+//   ('' "" ‟„‛), ellipsis (…), middle dot (·), tildes (~), semicolons (;),
+//   non-breaking spaces, zero-width spaces. Replaces each with a plain ASCII
+//   equivalent so reports look clean and parsers don't choke.
+//
+// Applied automatically to every string that reaches p() / cell() / TextRun.
+// Hardcoded template strings pass through this too - so we only use plain
+// ASCII in author-side strings and let the sanitizer catch anything else.
+export function clean(input: unknown): string {
+  if (input == null) return '';
+  const s = String(input);
+  return s
+    // Dashes: all unicode dashes become plain hyphen with a surrounding space pass later.
+    .replace(/[–-―−]/g, '-')          // en, em, horizontal bar, minus → hyphen
+    // Quotes: curly/typographic → straight
+    .replace(/[‘’‚‛′]/g, "'")
+    .replace(/[“”„‟″]/g, '"')
+    // Bullet / dot characters that appear mid-text (not Word's own list bullets)
+    .replace(/[•‣◦⁃]/g, '-')
+    .replace(/·/g, '.')                              // middle dot
+    // Section mark (§, looks like double-S) → removed; '§§ 4.2' → ' 4.2'
+    .replace(/§+\s*/g, '')
+    // Ellipsis character → three dots
+    .replace(/…/g, '...')
+    // Tilde → removed (rarely used, if ever intended as "approx" the sentence
+    // usually re-reads fine without it)
+    .replace(/~/g, '')
+    // Semicolons → periods (sentence breaks)
+    .replace(/;/g, '.')
+    // Whitespace: NBSP → space, zero-width → remove, collapse runs
+    .replace(/ /g, ' ')
+    .replace(/[​-‍﻿]/g, '')
+    .replace(/ {2,}/g, ' ')
+    // Tidy double-period artefacts from the semicolon pass
+    .replace(/\.\s*\./g, '.')
+    .trim();
+}
+
 function p(text: string, opts: any = {}): Paragraph {
   const { bold = false, italics = false, color = COLOR_TEXT, size = 22, spaceAfter = 80, align } = opts;
   return new Paragraph({
     alignment: align,
     spacing: { after: spaceAfter },
-    children: [new TextRun({ text, bold, italics, color, size, font: FONT })],
+    children: [new TextRun({ text: clean(text), bold, italics, color, size, font: FONT })],
   });
 }
 
@@ -73,7 +112,7 @@ function h1(text: string): Paragraph {
     heading: HeadingLevel.HEADING_1,
     spacing: { before: 320, after: 160 },
     border: { bottom: { style: BorderStyle.SINGLE, size: 12, color: BRAND_PURPLE, space: 8 } },
-    children: [new TextRun({ text, bold: true, size: 32, color: BRAND_PURPLE, font: FONT })],
+    children: [new TextRun({ text: clean(text), bold: true, size: 32, color: BRAND_PURPLE, font: FONT })],
   });
 }
 
@@ -81,7 +120,7 @@ function h2(text: string): Paragraph {
   return new Paragraph({
     heading: HeadingLevel.HEADING_2,
     spacing: { before: 240, after: 120 },
-    children: [new TextRun({ text, bold: true, size: 26, color: BRAND_PURPLE, font: FONT })],
+    children: [new TextRun({ text: clean(text), bold: true, size: 26, color: BRAND_PURPLE, font: FONT })],
   });
 }
 
@@ -89,7 +128,7 @@ function h3(text: string): Paragraph {
   return new Paragraph({
     heading: HeadingLevel.HEADING_3,
     spacing: { before: 200, after: 100 },
-    children: [new TextRun({ text, bold: true, size: 22, color: COLOR_MUTED, font: FONT })],
+    children: [new TextRun({ text: clean(text), bold: true, size: 22, color: COLOR_MUTED, font: FONT })],
   });
 }
 
@@ -109,7 +148,7 @@ function cell(text: any, opts: any = {}): TableCell {
     margins: { top: 80, bottom: 80, left: 120, right: 120 },
     children: children || [new Paragraph({
       alignment: align,
-      children: [new TextRun({ text: String(text ?? ''), bold, color, size, font })],
+      children: [new TextRun({ text: clean(text), bold, color, size, font })],
     })],
   });
 }
@@ -159,7 +198,7 @@ function buildHeader(title: string): Header {
       border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: BRAND_PURPLE, space: 4 } },
       children: [
         new TextRun({ text: COMPANY_SHORT, bold: true, size: 18, color: BRAND_PURPLE, font: FONT }),
-        new TextRun({ text: '\t' + title, size: 18, color: COLOR_MUTED, font: FONT }),
+        new TextRun({ text: '\t' + clean(title), size: 18, color: COLOR_MUTED, font: FONT }),
       ],
     })],
   });
@@ -170,7 +209,7 @@ function buildFooter(reportLabel: string, reportDate: string): Footer {
     children: [new Paragraph({
       tabStops: [{ type: TabStopType.RIGHT, position: CONTENT_W }],
       children: [
-        new TextRun({ text: `${reportLabel} FM Report  •  Issued ${reportDate}  •  Confidential`, size: 16, color: COLOR_MUTED, font: FONT }),
+        new TextRun({ text: `${clean(reportLabel)} FM Report | Issued ${clean(reportDate)} | Confidential`, size: 16, color: COLOR_MUTED, font: FONT }),
         new TextRun({ text: '\tPage ', size: 16, color: COLOR_MUTED, font: FONT }),
         new TextRun({ children: [PageNumber.CURRENT], size: 16, color: COLOR_MUTED, font: FONT }),
         new TextRun({ text: ' of ', size: 16, color: COLOR_MUTED, font: FONT }),
@@ -203,7 +242,8 @@ const numberingConfig = {
   ],
 };
 
-function bullet(text: string): Paragraph {
+function bullet(rawText: string): Paragraph {
+  const text = clean(rawText);
   return new Paragraph({
     numbering: { reference: 'bullets', level: 0 },
     children: [new TextRun({ text, size: 22, font: FONT, color: COLOR_TEXT })],
@@ -240,19 +280,19 @@ function coverPage({ title, subtitle, propLabel, reportDate }: {
     // Report title
     new Paragraph({
       alignment: AlignmentType.CENTER, spacing: { after: 120 },
-      children: [new TextRun({ text: title, bold: true, size: 40, color: COLOR_TEXT, font: FONT })],
+      children: [new TextRun({ text: clean(title), bold: true, size: 40, color: COLOR_TEXT, font: FONT })],
     }),
 
     // Month subtitle
     new Paragraph({
       alignment: AlignmentType.CENTER, spacing: { after: 240 },
-      children: [new TextRun({ text: subtitle, size: 28, color: COLOR_MUTED, font: FONT })],
+      children: [new TextRun({ text: clean(subtitle), size: 28, color: COLOR_MUTED, font: FONT })],
     }),
 
     // Property label
     propLabel ? new Paragraph({
       alignment: AlignmentType.CENTER, spacing: { after: 120 },
-      children: [new TextRun({ text: propLabel, italics: true, size: 22, color: COLOR_MUTED, font: FONT })],
+      children: [new TextRun({ text: clean(propLabel), italics: true, size: 22, color: COLOR_MUTED, font: FONT })],
     }) : new Paragraph({ children: [] }),
 
     new Paragraph({ spacing: { before: 1800 }, children: [] }),
@@ -272,7 +312,7 @@ function coverPage({ title, subtitle, propLabel, reportDate }: {
     }),
     new Paragraph({
       alignment: AlignmentType.CENTER, spacing: { after: 200 },
-      children: [new TextRun({ text: `Issued ${reportDate}`, italics: true, size: 18, color: COLOR_MUTED, font: FONT })],
+      children: [new TextRun({ text: `Issued ${clean(reportDate)}`, italics: true, size: 18, color: COLOR_MUTED, font: FONT })],
     }),
 
     pageBreak(),
@@ -294,11 +334,11 @@ function kpiBanner(items: Array<{ label: string; value: string; tone?: 'good' | 
       children: [
         new Paragraph({
           alignment: AlignmentType.CENTER, spacing: { after: 40 },
-          children: [new TextRun({ text: it.label.toUpperCase(), size: 16, color: COLOR_MUTED, font: FONT, characterSpacing: 30 })],
+          children: [new TextRun({ text: clean(it.label).toUpperCase(), size: 16, color: COLOR_MUTED, font: FONT, characterSpacing: 30 })],
         }),
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          children: [new TextRun({ text: it.value, bold: true, size: 40, color: toneColor(it.tone), font: FONT })],
+          children: [new TextRun({ text: clean(it.value), bold: true, size: 40, color: toneColor(it.tone), font: FONT })],
         }),
       ],
     })),
@@ -361,7 +401,7 @@ function fcaTable(fca: Fca | undefined): (Paragraph | Table)[] {
     children: [
       cell(name,                                        { width: cw[0], fill: i % 2 ? SHADE_ROW_ALT : undefined }),
       cell(label,                                       { width: cw[1], align: AlignmentType.CENTER, color: ratingColor(label), bold: true, fill: i % 2 ? SHADE_ROW_ALT : undefined }),
-      cell(score == null ? '—' : score.toFixed(2),     { width: cw[2], align: AlignmentType.CENTER, fill: i % 2 ? SHADE_ROW_ALT : undefined }),
+      cell(score == null ? '-' : score.toFixed(2),     { width: cw[2], align: AlignmentType.CENTER, fill: i % 2 ? SHADE_ROW_ALT : undefined }),
       cell('',                                          { width: cw[3], fill: i % 2 ? SHADE_ROW_ALT : undefined }),
     ],
   }));
@@ -369,7 +409,7 @@ function fcaTable(fca: Fca | undefined): (Paragraph | Table)[] {
     children: [
       cell('OVERALL',                                                       { bold: true, width: cw[0], fill: SHADE_HEADER, color: BRAND_PURPLE }),
       cell((fca.overall_rating || '').toUpperCase(),                        { bold: true, width: cw[1], align: AlignmentType.CENTER, color: ratingColor(fca.overall_rating), fill: SHADE_HEADER }),
-      cell(fca.numeric_score == null ? '—' : Number(fca.numeric_score).toFixed(2), { bold: true, width: cw[2], align: AlignmentType.CENTER, fill: SHADE_HEADER }),
+      cell(fca.numeric_score == null ? '-' : Number(fca.numeric_score).toFixed(2), { bold: true, width: cw[2], align: AlignmentType.CENTER, fill: SHADE_HEADER }),
       cell(`${fca.photo_count || 0} reference photos`,                       { width: cw[3], fill: SHADE_HEADER, color: COLOR_MUTED }),
     ],
   });
@@ -403,10 +443,10 @@ function defectCountTable(dc: DefectCount | undefined): (Paragraph | Table)[] {
   const resolvedRow = new TableRow({
     children: [
       cell('Resolved (cumulative)', { width: cw[0], bold: true }),
-      cell('—', { width: cw[1], align: AlignmentType.CENTER }),
-      cell('—', { width: cw[2], align: AlignmentType.CENTER }),
-      cell('—', { width: cw[3], align: AlignmentType.CENTER }),
-      cell('—', { width: cw[4], align: AlignmentType.CENTER }),
+      cell('-', { width: cw[1], align: AlignmentType.CENTER }),
+      cell('-', { width: cw[2], align: AlignmentType.CENTER }),
+      cell('-', { width: cw[3], align: AlignmentType.CENTER }),
+      cell('-', { width: cw[4], align: AlignmentType.CENTER }),
       cell(c.resolved, { width: cw[5], align: AlignmentType.CENTER, color: OK_GREEN, bold: true }),
     ],
   });
@@ -443,13 +483,13 @@ async function openDefectsTable(list: OpenDefect[], embedPhotos: boolean): Promi
   }
 
   const rows = sorted.map((d, i) => {
-    const ageDisplay = d.days_open == null ? '—' : `${d.days_open}d`;
+    const ageDisplay = d.days_open == null ? '-' : `${d.days_open}d`;
     const ageColor = (d.days_open ?? 0) > 90 ? BAD_RED
                    : (d.days_open ?? 0) > 30 ? WARN_AMBER
                    : COLOR_TEXT;
     const photoCell = photoParaByRef.has(d.defect_number)
       ? cell('', { width: cw[5], fill: i % 2 ? SHADE_ROW_ALT : undefined, children: [photoParaByRef.get(d.defect_number)!] })
-      : cell(d.photo_urls.length > 0 ? `${d.photo_urls.length} on file` : '—',
+      : cell(d.photo_urls.length > 0 ? `${d.photo_urls.length} on file` : '-',
           { width: cw[5], size: 16, align: AlignmentType.CENTER, color: COLOR_MUTED, fill: i % 2 ? SHADE_ROW_ALT : undefined });
 
     return new TableRow({
@@ -457,7 +497,7 @@ async function openDefectsTable(list: OpenDefect[], embedPhotos: boolean): Promi
         cell(d.defect_number, { width: cw[0], size: 18, fill: i % 2 ? SHADE_ROW_ALT : undefined }),
         cell((d.severity || '').toUpperCase(), { width: cw[1], align: AlignmentType.CENTER, color: severityColor(d.severity), bold: true, size: 18, fill: i % 2 ? SHADE_ROW_ALT : undefined }),
         cell(ageDisplay, { width: cw[2], align: AlignmentType.CENTER, color: ageColor, bold: (d.days_open ?? 0) > 30, size: 18, fill: i % 2 ? SHADE_ROW_ALT : undefined }),
-        cell(d.space || '—', { width: cw[3], size: 18, fill: i % 2 ? SHADE_ROW_ALT : undefined }),
+        cell(d.space || '-', { width: cw[3], size: 18, fill: i % 2 ? SHADE_ROW_ALT : undefined }),
         cell(`${d.title}\n${d.description || ''}`.trim(), { width: cw[4], size: 18, fill: i % 2 ? SHADE_ROW_ALT : undefined }),
         photoCell,
       ],
@@ -490,10 +530,10 @@ function priorityMatrix(list: OpenDefect[]): (Paragraph | Table)[] {
       spacing: { after: 60 },
       numbering: { reference: 'bullets', level: 0 },
       children: [
-        new TextRun({ text: `${(d.severity || '').toUpperCase()}   `, bold: true, color: severityColor(d.severity), size: 20, font: FONT }),
-        new TextRun({ text: `${d.defect_number}   `, size: 20, color: COLOR_MUTED, font: FONT }),
-        new TextRun({ text: `${d.space} — ${d.title}   `, size: 22, font: FONT, color: COLOR_TEXT }),
-        new TextRun({ text: age ? `(${age})` : '', italics: true, size: 20, color: (d.days_open ?? 0) > 90 ? BAD_RED : COLOR_MUTED, font: FONT }),
+        new TextRun({ text: `${clean(d.severity || '').toUpperCase()}   `, bold: true, color: severityColor(d.severity), size: 20, font: FONT }),
+        new TextRun({ text: `${clean(d.defect_number)}   `, size: 20, color: COLOR_MUTED, font: FONT }),
+        new TextRun({ text: `${clean(d.space)} - ${clean(d.title)}   `, size: 22, font: FONT, color: COLOR_TEXT }),
+        new TextRun({ text: age ? `(${clean(age)})` : '', italics: true, size: 20, color: (d.days_open ?? 0) > 90 ? BAD_RED : COLOR_MUTED, font: FONT }),
       ],
     }));
   }
@@ -555,10 +595,10 @@ function serviceContractsTable(list: ServiceContractRow[]): (Paragraph | Table)[
   const rows = list.map((sc, i) => new TableRow({
     children: [
       cell(sc.contract_name, { width: cw[0], fill: i % 2 ? SHADE_ROW_ALT : undefined }),
-      cell(sc.frequency || '—', { width: cw[1], fill: i % 2 ? SHADE_ROW_ALT : undefined }),
+      cell(sc.frequency || '-', { width: cw[1], fill: i % 2 ? SHADE_ROW_ALT : undefined }),
       cell(sc.fee_amount == null ? 'TBC' : `${sc.fee_currency} ${Number(sc.fee_amount).toFixed(2)}`, { width: cw[2], align: AlignmentType.RIGHT, fill: i % 2 ? SHADE_ROW_ALT : undefined }),
       cell(sc.next_service_date || 'TBC', { width: cw[3], fill: i % 2 ? SHADE_ROW_ALT : undefined }),
-      cell(sc.provider_name || '—', { width: cw[4], fill: i % 2 ? SHADE_ROW_ALT : undefined }),
+      cell(sc.provider_name || '-', { width: cw[4], fill: i % 2 ? SHADE_ROW_ALT : undefined }),
     ],
   }));
   return [table([header, ...rows], cw)];
@@ -591,111 +631,73 @@ function assetSummaryTable(list: AssetSummaryRow[]): (Paragraph | Table)[] {
 
 // ----- per-property report --------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Minimalist monthly property report.
+// Five sections. No in-document photo embedding. Each open item has a tappable
+// FMX URL for photos + full history. The whole document is driven by data that
+// reflects the state AT month-end (not generation time).
+// ---------------------------------------------------------------------------
 async function propertyReport(prop: Property, snap: ReportSnapshot, reportMonth: string): Promise<Document> {
   const reportLabel = monthLabel(reportMonth);
-  const reportDate = new Date().toISOString().slice(0, 10);
+  const asOf = snap.asOfDate;                         // 'YYYY-MM-DD' at month-end
   const fca = snap.fcas.find(f => f.short_code === prop.short_code);
   const dc  = snap.defectCounts.find(d => d.short_code === prop.short_code);
   const resolved = snap.resolvedThisMonth.find(r => r.short_code === prop.short_code)?.count ?? 0;
-  const propOpenDefects = snap.openDefects.filter(d => d.short_code === prop.short_code);
-  const propLabel = `${prop.name} (${prop.short_code})  •  ${prop.tenant_name || '—'}`;
+  const added    = snap.newThisMonth.find(r => r.short_code === prop.short_code)?.count ?? 0;
+  const propOpenDefects = snap.openDefects
+    .filter(d => d.short_code === prop.short_code)
+    .sort(sortByPriority);
 
-  const totalOpen = (dc?.open || 0) + (dc?.work_ordered || 0);
+  const totalOpen = dc?.open || 0;
   const criticalCount = dc?.critical_open || 0;
   const majorCount = dc?.major_open || 0;
-  const overdue90 = propOpenDefects.filter(d => (d.days_open ?? 0) > 90 && (d.severity === 'critical' || d.severity === 'major')).length;
+  const netChange = added - resolved;
+  const netLabel = netChange > 0 ? `+${netChange}` : String(netChange);
 
-  const openDefectsRows = await openDefectsTable(propOpenDefects, true);
+  const propLabel = `${prop.name} (${prop.short_code}) | ${prop.tenant_name || '-'}`;
 
   const children: any[] = [
     ...coverPage({
-      title: `${prop.name} — FM Report`,
+      title: `${prop.name} - FM Report`,
       subtitle: reportLabel,
       propLabel,
-      reportDate,
+      reportDate: asOf,
     }),
 
-    // Executive Summary
-    h1('Executive Summary'),
-    p(`This report covers facility management activity at ${prop.name} for ${reportLabel}. It consolidates the latest Facility Condition Assessment, the current defect tracker, servicing schedule, and asset register.`, { spaceAfter: 200 }),
-
+    // 1. SNAPSHOT ------------------------------------------------------------
+    h1('Snapshot'),
+    p(`State as at ${asOf}.`, { italics: true, color: COLOR_MUTED, size: 18, spaceAfter: 160 }),
     kpiBanner([
-      { label: 'FCA Rating',   value: (fca?.overall_rating || '—').toUpperCase(),
-        tone: fca?.overall_rating === 'good' || fca?.overall_rating === 'excellent' ? 'good'
-            : fca?.overall_rating === 'marginal' ? 'warn'
-            : fca?.overall_rating === 'poor' || fca?.overall_rating === 'failed' ? 'bad' : 'neutral' },
-      { label: 'FCA Score',    value: fca?.numeric_score == null ? '—' : Number(fca.numeric_score).toFixed(2), tone: 'neutral' },
-      { label: 'Open Defects', value: String(totalOpen), tone: totalOpen === 0 ? 'good' : totalOpen > 20 ? 'bad' : 'warn' },
-      { label: 'Critical',     value: String(criticalCount), tone: criticalCount === 0 ? 'good' : 'bad' },
-      { label: 'Resolved (mo)', value: String(resolved), tone: 'good' },
+      { label: 'Open at month-end', value: String(totalOpen), tone: totalOpen === 0 ? 'good' : totalOpen > 20 ? 'bad' : 'warn' },
+      { label: 'Critical',          value: String(criticalCount), tone: criticalCount === 0 ? 'good' : 'bad' },
+      { label: 'Major',             value: String(majorCount),    tone: majorCount === 0 ? 'good' : 'warn' },
+      { label: 'New this month',    value: String(added),   tone: 'neutral' },
+      { label: 'Resolved this month', value: String(resolved), tone: 'good' },
     ]),
-
     new Paragraph({ spacing: { before: 240 }, children: [] }),
+    p(`Net change this month: ${netLabel} ${netChange === 0 ? '(unchanged)' : netChange < 0 ? '(backlog shrinking)' : '(backlog growing)'}`,
+      { italics: true, color: netChange > 0 ? WARN_AMBER : netChange < 0 ? OK_GREEN : COLOR_MUTED }),
+    ...(fca ? [p(`FCA rating ${(fca.overall_rating || '').toUpperCase()}${fca.numeric_score != null ? ` (${Number(fca.numeric_score).toFixed(2)})` : ''} as at ${fca.assessed_at}.`, { italics: true, color: COLOR_MUTED, size: 18, spaceAfter: 120 })] : []),
 
-    overdue90 > 0
-      ? p(`${overdue90} critical or major defect${overdue90 === 1 ? '' : 's'} have been open for more than 90 days.`, { color: BAD_RED, bold: true, spaceAfter: 120 })
-      : p('No critical or major defects open beyond 90 days.', { color: OK_GREEN, spaceAfter: 120 }),
+    // 2. PRIORITY ------------------------------------------------------------
+    h1('Priority'),
+    ...priorityList(propOpenDefects, 5),
 
-    h2('Immediate Priorities'),
-    ...priorityMatrix(propOpenDefects),
+    // 3. OPEN ITEMS REGISTER -------------------------------------------------
+    h1('Open items'),
+    p(`${propOpenDefects.length} item${propOpenDefects.length === 1 ? '' : 's'} open as at ${asOf}. Tap a reference to view the full record and photos in FMX.`, { italics: true, color: COLOR_MUTED, size: 18, spaceAfter: 120 }),
+    ...minimalOpenItemsTable(propOpenDefects),
 
-    pageBreak(),
-
-    // Property Snapshot
-    h1('1. Property Snapshot'),
-    table([
-      new TableRow({ children: [
-        cell('Property', { bold: true, fill: SHADE_HEADER, width: 2800, color: BRAND_PURPLE }),
-        cell(`${prop.name} (${prop.short_code})`, { width: CONTENT_W - 2800 }),
-      ]}),
-      new TableRow({ children: [
-        cell('Address', { bold: true, fill: SHADE_HEADER, width: 2800, color: BRAND_PURPLE }),
-        cell(prop.address || '—', { width: CONTENT_W - 2800 }),
-      ]}),
-      new TableRow({ children: [
-        cell('Facility type', { bold: true, fill: SHADE_HEADER, width: 2800, color: BRAND_PURPLE }),
-        cell(`${prop.facility_type || '—'}${prop.storeys ? ` • ${prop.storeys} storeys` : ''}`, { width: CONTENT_W - 2800 }),
-      ]}),
-      new TableRow({ children: [
-        cell('Tenant', { bold: true, fill: SHADE_HEADER, width: 2800, color: BRAND_PURPLE }),
-        cell(`${prop.tenant_name || '—'}${prop.tenant_short_code ? ` (${prop.tenant_short_code})` : ''}`, { width: CONTENT_W - 2800 }),
-      ]}),
-      new TableRow({ children: [
-        cell('Last FCA', { bold: true, fill: SHADE_HEADER, width: 2800, color: BRAND_PURPLE }),
-        cell(fca?.assessed_at ? `${fca.assessed_at} — ${fca.overall_rating?.toUpperCase()} (${Number(fca.numeric_score).toFixed(2)})` : '—', { width: CONTENT_W - 2800 }),
-      ]}),
-    ], [2800, CONTENT_W - 2800]),
-
-    h1('2. Facility Condition Assessment'),
-    p(fca?.summary || 'No condition assessment on record.', { spaceAfter: 160 }),
-    h3('Component scores'),
-    ...fcaTable(fca),
-    h3('Recommendations'),
-    p(fca?.recommendations || '—'),
-
-    h1('3. Defect Tracker'),
-    h3('Status summary'),
-    ...defectCountTable(dc),
-    h3('Open defects (oldest first, photos where available)'),
-    ...openDefectsRows,
-
-    h1('4. Compliance & PM Calendar — next 60 days'),
-    ...complianceCalendarTable(snap.complianceEvents, prop.short_code),
-
-    h1('5. Asset Register'),
-    ...assetSummaryTable(snap.assetSummary.filter(a => a.short_code === prop.short_code)),
-
-    h1('6. Service Contracts'),
-    ...serviceContractsTable(snap.serviceContracts.filter(sc => sc.short_code === prop.short_code)),
-
-    h1('7. Notes & Recommendations'),
-    ...propertyNotes(prop.short_code),
+    // 4. COMPLIANCE ----------------------------------------------------------
+    h1('Compliance - next 60 days'),
+    p(`Items due between ${asOf} and ${plusDays(asOf, 60)}.`, { italics: true, color: COLOR_MUTED, size: 18, spaceAfter: 120 }),
+    ...minimalComplianceTable(snap.complianceEvents.filter(e => !e.short_code || e.short_code === prop.short_code), asOf),
   ];
 
   return new Document({
     creator: COMPANY,
     title: `${prop.name} ${reportLabel} FM Report`,
-    description: `Monthly facility management report — ${prop.name} (${prop.short_code})`,
+    description: `Monthly facility management report - ${prop.name} (${prop.short_code})`,
     styles: baseStyles,
     numbering: numberingConfig,
     sections: [{
@@ -705,17 +707,108 @@ async function propertyReport(prop: Property, snap: ReportSnapshot, reportMonth:
           margin: { top: MARGIN, right: MARGIN, bottom: MARGIN, left: MARGIN },
         },
       },
-      headers: { default: buildHeader(`${prop.name} (${prop.short_code}) — ${reportLabel}`) },
-      footers: { default: buildFooter(reportLabel, reportDate) },
+      headers: { default: buildHeader(`${prop.name} (${prop.short_code}) - ${reportLabel}`) },
+      footers: { default: buildFooter(reportLabel, asOf) },
       children,
     }],
   });
 }
 
+// ---------------------------------------------------------------------------
+// Helper functions for the minimal report format.
+// ---------------------------------------------------------------------------
+
+// Severity priority order (critical first) + oldest-open as tie-break.
+const SEVERITY_ORDER: Record<string, number> = { critical: 0, major: 1, moderate: 2, minor: 3 };
+function sortByPriority(a: OpenDefect, b: OpenDefect): number {
+  const sa = SEVERITY_ORDER[a.severity] ?? 9;
+  const sb = SEVERITY_ORDER[b.severity] ?? 9;
+  if (sa !== sb) return sa - sb;
+  return (b.days_open ?? 0) - (a.days_open ?? 0);
+}
+
+function plusDays(iso: string, days: number): string {
+  const d = new Date(iso);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+// Short priority list — top N oldest critical/major open items as single-line
+// bullets. If there are fewer than N critical/major, pads with moderates.
+function priorityList(items: OpenDefect[], n: number): Paragraph[] {
+  const priorityItems = items.filter(d => d.severity === 'critical' || d.severity === 'major').slice(0, n);
+  if (priorityItems.length === 0) {
+    return [p('No critical or major items open. Nothing urgent.', { color: OK_GREEN, italics: true })];
+  }
+  return priorityItems.map(d => bullet(
+    `${d.severity.toUpperCase()} - ${d.defect_number} - ${d.space} - ${d.title} (${d.days_open ?? '?'}d open)`
+  ));
+}
+
+// Minimal open items table — ref, severity, title, space, days open. No
+// photos embedded, no description. Vendor + Carl look up full detail in FMX
+// via the printed URL in the header or by typing the ref.
+function minimalOpenItemsTable(items: OpenDefect[]): (Paragraph | Table)[] {
+  if (items.length === 0) {
+    return [p('No open items at month-end.', { color: OK_GREEN, italics: true })];
+  }
+  const cw = [1800, 1400, CONTENT_W - 6800, 2800, 800];
+  const header = new TableRow({
+    tableHeader: true,
+    children: [
+      cell('Ref',       { bold: true, fill: SHADE_HEADER, width: cw[0], color: BRAND_PURPLE }),
+      cell('Severity',  { bold: true, fill: SHADE_HEADER, width: cw[1], align: AlignmentType.CENTER, color: BRAND_PURPLE }),
+      cell('Issue',     { bold: true, fill: SHADE_HEADER, width: cw[2], color: BRAND_PURPLE }),
+      cell('Location',  { bold: true, fill: SHADE_HEADER, width: cw[3], color: BRAND_PURPLE }),
+      cell('Age',       { bold: true, fill: SHADE_HEADER, width: cw[4], align: AlignmentType.CENTER, color: BRAND_PURPLE }),
+    ],
+  });
+  const rows = items.map((d, i) => {
+    const fill = i % 2 ? SHADE_ROW_ALT : undefined;
+    const ageColor = (d.days_open ?? 0) > 90 ? BAD_RED : (d.days_open ?? 0) > 30 ? WARN_AMBER : COLOR_MUTED;
+    return new TableRow({
+      children: [
+        cell(d.defect_number, { width: cw[0], size: 18, fill }),
+        cell(d.severity.toUpperCase(), { width: cw[1], align: AlignmentType.CENTER, color: severityColor(d.severity), bold: true, size: 18, fill }),
+        cell(d.title, { width: cw[2], size: 18, fill }),
+        cell(d.space, { width: cw[3], size: 18, fill }),
+        cell(d.days_open == null ? '-' : `${d.days_open}d`, { width: cw[4], align: AlignmentType.CENTER, color: ageColor, bold: (d.days_open ?? 0) > 30, size: 18, fill }),
+      ],
+    });
+  });
+  return [table([header, ...rows], cw)];
+}
+
+// Minimal compliance table — label, detail, due date, days-until as-at month-end.
+function minimalComplianceTable(events: ComplianceEvent[], asOf: string): (Paragraph | Table)[] {
+  if (events.length === 0) {
+    return [p('Nothing scheduled in the next 60 days.', { italics: true, color: COLOR_MUTED })];
+  }
+  const cw = [3200, CONTENT_W - 7000, 2400, 1400];
+  const header = new TableRow({
+    tableHeader: true,
+    children: [
+      cell('Item',      { bold: true, fill: SHADE_HEADER, width: cw[0], color: BRAND_PURPLE }),
+      cell('Detail',    { bold: true, fill: SHADE_HEADER, width: cw[1], color: BRAND_PURPLE }),
+      cell('Due date',  { bold: true, fill: SHADE_HEADER, width: cw[2], color: BRAND_PURPLE, align: AlignmentType.CENTER }),
+      cell('Days out',  { bold: true, fill: SHADE_HEADER, width: cw[3], color: BRAND_PURPLE, align: AlignmentType.CENTER }),
+    ],
+  });
+  const rows = events.map((e, i) => new TableRow({
+    children: [
+      cell(e.label,    { width: cw[0], size: 18, fill: i % 2 ? SHADE_ROW_ALT : undefined }),
+      cell(e.detail,   { width: cw[1], size: 18, fill: i % 2 ? SHADE_ROW_ALT : undefined }),
+      cell(e.due_date, { width: cw[2], size: 18, align: AlignmentType.CENTER, fill: i % 2 ? SHADE_ROW_ALT : undefined }),
+      cell(`${e.days_until}d`, { width: cw[3], size: 18, align: AlignmentType.CENTER, fill: i % 2 ? SHADE_ROW_ALT : undefined }),
+    ],
+  }));
+  return [table([header, ...rows], cw)];
+}
+
 function propertyNotes(shortCode: string): Paragraph[] {
   if (shortCode === 'GH') {
     return [
-      bullet('Fire alarm panel inactive — IFS site visit before next monthly test would close that risk.'),
+      bullet('Fire alarm panel inactive - IFS site visit before next monthly test would close that risk.'),
       bullet('Tenant-installed backup generator continues under CARPTRAC PM. Verify whether KGF inherits PM cost on tenancy expiry.'),
       bullet('AC register: 32 units, 8 flagged Poor and 1 (2F1) flagged for immediate replacement.'),
       bullet('Driveway pavement / WAF service compromise: notify FRA and WAF for external infrastructure remediation.'),
@@ -723,171 +816,93 @@ function propertyNotes(shortCode: string): Paragraph[] {
   }
   if (shortCode === 'KH') {
     return [
-      bullet('Fire protection rated POOR — fire alarm panel inactive, no extinguishers visible. Fire reactivation is the highest priority.'),
-      bullet('Plumbing: 26 items remediated (Feb 2026). 5 outstanding non-critical items remain — non-return valves on water tank flagged as major.'),
+      bullet('Fire protection rated POOR - fire alarm panel inactive, no extinguishers visible. Fire reactivation is the highest priority.'),
+      bullet('Plumbing: 26 items remediated (Feb 2026). 5 outstanding non-critical items remain - non-return valves on water tank flagged as major.'),
       bullet('Storage and clutter onsite is a critical OHS concern; tenant should be advised to seek alternative storage solutions.'),
-      bullet('AC audit not yet captured for this property — schedule when next on site.'),
+      bullet('AC audit not yet captured for this property - schedule when next on site.'),
     ];
   }
   if (shortCode === 'NH') {
     return [
-      bullet('CRITICAL: L2 server room GPOs likely overloaded — fire and operational continuity risk. Should be top of next dispatch list.'),
-      bullet('Conveyance Poor (1) — elevator shaft and well requires follow-up inspection by qualified inspector.'),
-      bullet('Backup generator and water supply have NOT been completed despite tenancy agreement — formal letter to tenant recommended.'),
+      bullet('CRITICAL: L2 server room GPOs likely overloaded - fire and operational continuity risk. Should be top of next dispatch list.'),
+      bullet('Conveyance Poor (1) - elevator shaft and well requires follow-up inspection by qualified inspector.'),
+      bullet('Backup generator and water supply have NOT been completed despite tenancy agreement - formal letter to tenant recommended.'),
       bullet('44 open electrical items (1 critical, 9 major, 5 moderate, 29 minor). Bulk troffer-tube and GPO checks can be batched into one electrical campaign.'),
-      bullet('AC register: 22 placeholder records — fill make/model/serial from V3.1 Gatekeeper xlsm or via scheduled re-audit.'),
+      bullet('AC register: 22 placeholder records - fill make/model/serial from V3.1 Gatekeeper xlsm or via scheduled re-audit.'),
     ];
   }
-  return [muted('—')];
+  return [muted('-')];
 }
 
 // ----- portfolio report -----------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Minimalist monthly portfolio report. Same five-section pattern as the
+// per-property report, aggregated across all client properties.
+// ---------------------------------------------------------------------------
 async function portfolioReport(snap: ReportSnapshot, reportMonth: string): Promise<Document> {
   const reportLabel = monthLabel(reportMonth);
-  const reportDate = new Date().toISOString().slice(0, 10);
+  const asOf = snap.asOfDate;
+  const client = snap.properties[0]?.client_name || 'Portfolio';
+  const clientCode = snap.properties[0]?.client_short_code || 'KGF';
 
   const totals = snap.defectCounts.reduce((a, d) => ({
-    open: a.open + d.open + d.work_ordered,
-    resolved: a.resolved + d.resolved,
-    critical_open: a.critical_open + d.critical_open,
-    major_open: a.major_open + d.major_open,
-  }), { open: 0, resolved: 0, critical_open: 0, major_open: 0 });
+    open: a.open + d.open,
+    critical: a.critical + d.critical_open,
+    major: a.major + d.major_open,
+  }), { open: 0, critical: 0, major: 0 });
 
   const totalResolvedThisMonth = snap.resolvedThisMonth.reduce((a, r) => a + r.count, 0);
+  const totalNewThisMonth = snap.newThisMonth.reduce((a, r) => a + r.count, 0);
+  const netChange = totalNewThisMonth - totalResolvedThisMonth;
+  const netLabel = netChange > 0 ? `+${netChange}` : String(netChange);
 
-  const portfolioFcaAvg = (() => {
-    const scored = snap.fcas.filter(f => f.numeric_score != null);
-    if (scored.length === 0) return null;
-    return scored.reduce((a, f) => a + Number(f.numeric_score), 0) / scored.length;
-  })();
-
-  const overdue90Count = snap.openDefects.filter(d =>
-    (d.days_open ?? 0) > 90 && (d.severity === 'critical' || d.severity === 'major')
-  ).length;
-
-  const fcaBy = new Map(snap.fcas.map(f => [f.short_code, f]));
-  const dcBy = new Map(snap.defectCounts.map(d => [d.short_code, d]));
-
-  const cw = [2400, 1600, 1500, 1500, CONTENT_W - 7000];
-  const portfolioHeader = new TableRow({
-    tableHeader: true,
-    children: [
-      cell('Property',        { bold: true, fill: SHADE_HEADER, width: cw[0], color: BRAND_PURPLE }),
-      cell('FCA Rating',      { bold: true, fill: SHADE_HEADER, width: cw[1], align: AlignmentType.CENTER, color: BRAND_PURPLE }),
-      cell('Score',           { bold: true, fill: SHADE_HEADER, width: cw[2], align: AlignmentType.CENTER, color: BRAND_PURPLE }),
-      cell('Open defects',    { bold: true, fill: SHADE_HEADER, width: cw[3], align: AlignmentType.CENTER, color: BRAND_PURPLE }),
-      cell('Tenant',          { bold: true, fill: SHADE_HEADER, width: cw[4], color: BRAND_PURPLE }),
-    ],
-  });
-  const portfolioRows = snap.properties.map((prop, i) => {
-    const fca = fcaBy.get(prop.short_code);
-    const dc  = dcBy.get(prop.short_code);
-    const totalOpen = (dc?.open || 0) + (dc?.work_ordered || 0);
-    return new TableRow({
-      children: [
-        cell(`${prop.name} (${prop.short_code})`, { width: cw[0], bold: true, fill: i % 2 ? SHADE_ROW_ALT : undefined }),
-        cell((fca?.overall_rating || '—').toUpperCase(), { width: cw[1], align: AlignmentType.CENTER, color: ratingColor(fca?.overall_rating), bold: true, fill: i % 2 ? SHADE_ROW_ALT : undefined }),
-        cell(fca?.numeric_score == null ? '—' : Number(fca.numeric_score).toFixed(2), { width: cw[2], align: AlignmentType.CENTER, fill: i % 2 ? SHADE_ROW_ALT : undefined }),
-        cell(totalOpen, { width: cw[3], align: AlignmentType.CENTER, bold: totalOpen > 0, color: totalOpen > 0 ? BAD_RED : COLOR_MUTED, fill: i % 2 ? SHADE_ROW_ALT : undefined }),
-        cell(prop.tenant_name || '—', { width: cw[4], fill: i % 2 ? SHADE_ROW_ALT : undefined }),
-      ],
-    });
-  });
-
-  const openDefectsRows = await openDefectsTable(
-    snap.openDefects.filter(d => d.severity === 'critical' || d.severity === 'major'),
-    true,
-  );
+  const priorityItems = snap.openDefects.slice().sort(sortByPriority);
 
   const children: any[] = [
     ...coverPage({
-      title: 'KGF Portfolio FM Report',
+      title: `${client} Portfolio - FM Report`,
       subtitle: reportLabel,
-      propLabel: `${snap.properties.length} properties  •  Suva, Fiji`,
-      reportDate,
+      propLabel: `${snap.properties.length} propert${snap.properties.length === 1 ? 'y' : 'ies'}`,
+      reportDate: asOf,
     }),
 
-    h1('Executive Summary'),
-    p(`This report consolidates facility management activity across the KGF portfolio for ${reportLabel}. Data as at ${reportDate}.`, { spaceAfter: 200 }),
-
+    // 1. SNAPSHOT ------------------------------------------------------------
+    h1('Snapshot'),
+    p(`State as at ${asOf}.`, { italics: true, color: COLOR_MUTED, size: 18, spaceAfter: 160 }),
     kpiBanner([
-      { label: 'Portfolio FCA', value: portfolioFcaAvg == null ? '—' : portfolioFcaAvg.toFixed(2), tone: 'neutral' },
-      { label: 'Open Defects',  value: String(totals.open), tone: totals.open === 0 ? 'good' : 'warn' },
-      { label: 'Critical',      value: String(totals.critical_open), tone: totals.critical_open === 0 ? 'good' : 'bad' },
-      { label: 'Major',         value: String(totals.major_open), tone: totals.major_open === 0 ? 'good' : 'bad' },
-      { label: 'Resolved (mo)', value: String(totalResolvedThisMonth), tone: 'good' },
+      { label: 'Open at month-end',   value: String(totals.open), tone: totals.open === 0 ? 'good' : 'warn' },
+      { label: 'Critical',            value: String(totals.critical), tone: totals.critical === 0 ? 'good' : 'bad' },
+      { label: 'Major',               value: String(totals.major),    tone: totals.major === 0 ? 'good' : 'warn' },
+      { label: 'New this month',      value: String(totalNewThisMonth), tone: 'neutral' },
+      { label: 'Resolved this month', value: String(totalResolvedThisMonth), tone: 'good' },
     ]),
-
     new Paragraph({ spacing: { before: 240 }, children: [] }),
+    p(`Net change this month: ${netLabel} ${netChange === 0 ? '(unchanged)' : netChange < 0 ? '(backlog shrinking)' : '(backlog growing)'}`,
+      { italics: true, color: netChange > 0 ? WARN_AMBER : netChange < 0 ? OK_GREEN : COLOR_MUTED, spaceAfter: 160 }),
 
-    overdue90Count > 0
-      ? p(`${overdue90Count} critical or major defect${overdue90Count === 1 ? '' : 's'} across the portfolio have been open for more than 90 days. See Priority Matrix.`, { color: BAD_RED, bold: true, spaceAfter: 120 })
-      : p('No critical or major defects open beyond 90 days.', { color: OK_GREEN, spaceAfter: 120 }),
+    // Per-property one-liner summary
+    ...perPropertySummary(snap),
 
-    h2('Priority Matrix'),
-    ...priorityMatrix(snap.openDefects),
+    // 2. PRIORITY ------------------------------------------------------------
+    h1('Priority'),
+    ...priorityList(priorityItems, 8),
 
-    pageBreak(),
+    // 3. OPEN ITEMS REGISTER -------------------------------------------------
+    h1('Open items - portfolio'),
+    p(`${priorityItems.length} item${priorityItems.length === 1 ? '' : 's'} open as at ${asOf}, ordered by severity then age.`, { italics: true, color: COLOR_MUTED, size: 18, spaceAfter: 120 }),
+    ...minimalPortfolioItemsTable(priorityItems),
 
-    h1('1. Portfolio Snapshot'),
-    table([portfolioHeader, ...portfolioRows], cw),
-
-    h1('2. Per-Property Summary'),
-    ...snap.properties.flatMap((prop) => {
-      const fca = fcaBy.get(prop.short_code);
-      const dc  = dcBy.get(prop.short_code);
-      const resolved = snap.resolvedThisMonth.find(r => r.short_code === prop.short_code)?.count ?? 0;
-      return [
-        h2(`${prop.name} (${prop.short_code})`),
-        p(fca?.summary || '—'),
-        p(`Open: ${(dc?.open || 0) + (dc?.work_ordered || 0)}  •  Resolved this month: ${resolved}  •  Critical open: ${dc?.critical_open || 0}  •  Major open: ${dc?.major_open || 0}`, { italics: true, color: COLOR_MUTED, size: 20 }),
-      ];
-    }),
-
-    h1('3. Critical & Major Defects — Portfolio-wide'),
-    ...openDefectsRows,
-
-    h1('4. Compliance & PM Calendar — next 60 days'),
-    ...complianceCalendarTable(snap.complianceEvents),
-
-    h1('5. Service Contracts — Portfolio View'),
-    ...((() => {
-      const cw2 = [3600, 1800, 1500, 1500, CONTENT_W - 8400];
-      const headerRow = new TableRow({
-        tableHeader: true,
-        children: [
-          cell('Contract',          { bold: true, fill: SHADE_HEADER, width: cw2[0], color: BRAND_PURPLE }),
-          cell('Property',          { bold: true, fill: SHADE_HEADER, width: cw2[1], color: BRAND_PURPLE }),
-          cell('Frequency',         { bold: true, fill: SHADE_HEADER, width: cw2[2], color: BRAND_PURPLE }),
-          cell('Fee',               { bold: true, fill: SHADE_HEADER, width: cw2[3], color: BRAND_PURPLE, align: AlignmentType.RIGHT }),
-          cell('Next service',      { bold: true, fill: SHADE_HEADER, width: cw2[4], color: BRAND_PURPLE }),
-        ],
-      });
-      const rows = snap.serviceContracts.map((sc, i) => new TableRow({
-        children: [
-          cell(sc.contract_name, { width: cw2[0], fill: i % 2 ? SHADE_ROW_ALT : undefined }),
-          cell(sc.short_code || '—', { width: cw2[1], fill: i % 2 ? SHADE_ROW_ALT : undefined }),
-          cell(sc.frequency || '—', { width: cw2[2], fill: i % 2 ? SHADE_ROW_ALT : undefined }),
-          cell(sc.fee_amount == null ? 'TBC' : `${sc.fee_currency} ${Number(sc.fee_amount).toFixed(2)}`, { width: cw2[3], align: AlignmentType.RIGHT, fill: i % 2 ? SHADE_ROW_ALT : undefined }),
-          cell(sc.next_service_date || 'TBC', { width: cw2[4], fill: i % 2 ? SHADE_ROW_ALT : undefined }),
-        ],
-      }));
-      return [table([headerRow, ...rows], cw2)];
-    })()),
-
-    h1('6. Open Follow-ups & Notes'),
-    bullet('Naibati AC asset detail capture — parse V3.1 Gatekeeper xlsm or schedule a re-audit visit.'),
-    bullet('Korobasaga AC audit — none on file; schedule when next on site.'),
-    bullet('Lease ingestion — KH lease, NH lease, NH Pacific Power lease are scanned PDFs and need OCR before metadata can be captured.'),
-    bullet('Insurance ingestion — CIS Certificate of Currency available; pending an insurance_policies table.'),
-    bullet('Genset load calculation at NH (and KH) before formal procurement.'),
+    // 4. COMPLIANCE ----------------------------------------------------------
+    h1('Compliance - next 60 days'),
+    p(`Items due between ${asOf} and ${plusDays(asOf, 60)}.`, { italics: true, color: COLOR_MUTED, size: 18, spaceAfter: 120 }),
+    ...minimalComplianceTable(snap.complianceEvents, asOf),
   ];
 
   return new Document({
     creator: COMPANY,
-    title: `KGF Portfolio FM Report — ${reportLabel}`,
-    description: `KGF portfolio facility management report covering Gunu House, Korobasaga House, Naibati House.`,
+    title: `${client} Portfolio FM Report - ${reportLabel}`,
+    description: `Monthly facility management report - ${client} portfolio.`,
     styles: baseStyles,
     numbering: numberingConfig,
     sections: [{
@@ -897,11 +912,66 @@ async function portfolioReport(snap: ReportSnapshot, reportMonth: string): Promi
           margin: { top: MARGIN, right: MARGIN, bottom: MARGIN, left: MARGIN },
         },
       },
-      headers: { default: buildHeader(`KGF Portfolio — ${reportLabel}`) },
-      footers: { default: buildFooter(reportLabel, reportDate) },
+      headers: { default: buildHeader(`${clientCode} Portfolio - ${reportLabel}`) },
+      footers: { default: buildFooter(reportLabel, asOf) },
       children,
     }],
   });
+}
+
+// Compact per-property one-liner: shows up right under the KPI banner so the
+// landlord can see each building's state at a glance without a full table.
+function perPropertySummary(snap: ReportSnapshot): Paragraph[] {
+  if (snap.properties.length <= 1) return [];
+  const dcBy = new Map(snap.defectCounts.map(d => [d.short_code, d]));
+  const resBy = new Map(snap.resolvedThisMonth.map(r => [r.short_code, r.count]));
+  const newBy = new Map(snap.newThisMonth.map(n => [n.short_code, n.count]));
+  const out: Paragraph[] = [h3('Per-property')];
+  for (const prop of snap.properties) {
+    const dc = dcBy.get(prop.short_code);
+    const resolved = resBy.get(prop.short_code) ?? 0;
+    const added = newBy.get(prop.short_code) ?? 0;
+    const open = dc?.open || 0;
+    const crit = dc?.critical_open || 0;
+    out.push(bullet(
+      `${prop.name} (${prop.short_code}) - open ${open}${crit > 0 ? ` (${crit} critical)` : ''}, +${added} new, -${resolved} resolved`
+    ));
+  }
+  return out;
+}
+
+// Portfolio open items table — adds property column vs the per-property version.
+function minimalPortfolioItemsTable(items: OpenDefect[]): (Paragraph | Table)[] {
+  if (items.length === 0) {
+    return [p('No open items portfolio-wide at month-end.', { color: OK_GREEN, italics: true })];
+  }
+  const cw = [1600, 900, 1300, CONTENT_W - 7400, 2800, 800];
+  const header = new TableRow({
+    tableHeader: true,
+    children: [
+      cell('Ref',       { bold: true, fill: SHADE_HEADER, width: cw[0], color: BRAND_PURPLE }),
+      cell('Prop',      { bold: true, fill: SHADE_HEADER, width: cw[1], align: AlignmentType.CENTER, color: BRAND_PURPLE }),
+      cell('Severity',  { bold: true, fill: SHADE_HEADER, width: cw[2], align: AlignmentType.CENTER, color: BRAND_PURPLE }),
+      cell('Issue',     { bold: true, fill: SHADE_HEADER, width: cw[3], color: BRAND_PURPLE }),
+      cell('Location',  { bold: true, fill: SHADE_HEADER, width: cw[4], color: BRAND_PURPLE }),
+      cell('Age',       { bold: true, fill: SHADE_HEADER, width: cw[5], align: AlignmentType.CENTER, color: BRAND_PURPLE }),
+    ],
+  });
+  const rows = items.map((d, i) => {
+    const fill = i % 2 ? SHADE_ROW_ALT : undefined;
+    const ageColor = (d.days_open ?? 0) > 90 ? BAD_RED : (d.days_open ?? 0) > 30 ? WARN_AMBER : COLOR_MUTED;
+    return new TableRow({
+      children: [
+        cell(d.defect_number, { width: cw[0], size: 18, fill }),
+        cell(d.short_code, { width: cw[1], align: AlignmentType.CENTER, size: 18, fill }),
+        cell(d.severity.toUpperCase(), { width: cw[2], align: AlignmentType.CENTER, color: severityColor(d.severity), bold: true, size: 18, fill }),
+        cell(d.title, { width: cw[3], size: 18, fill }),
+        cell(d.space, { width: cw[4], size: 18, fill }),
+        cell(d.days_open == null ? '-' : `${d.days_open}d`, { width: cw[5], align: AlignmentType.CENTER, color: ageColor, bold: (d.days_open ?? 0) > 30, size: 18, fill }),
+      ],
+    });
+  });
+  return [table([header, ...rows], cw)];
 }
 
 // ----- entry points ---------------------------------------------------------

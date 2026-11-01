@@ -10,6 +10,15 @@ function currentMonthIso(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+// Latest month a report can cover is the one that has fully ended, i.e.
+// the month BEFORE the current one. Used as the max= on the <input type="month">.
+function lastCompleteMonthIso(): string {
+  const d = new Date();
+  const y = d.getMonth() === 0 ? d.getFullYear() - 1 : d.getFullYear();
+  const m = d.getMonth() === 0 ? 12 : d.getMonth();   // getMonth() is 0-indexed; one less than current = last complete
+  return `${y}-${String(m).padStart(2, '0')}`;
+}
+
 export default function GenerateForm({
   properties,
   secretKey,
@@ -19,7 +28,8 @@ export default function GenerateForm({
   secretKey: string;
   client: string;
 }) {
-  const [month, setMonth] = useState(currentMonthIso());
+  const [month, setMonth] = useState(lastCompleteMonthIso());
+  const maxMonth = lastCompleteMonthIso();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [err, setErr] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -79,9 +89,13 @@ export default function GenerateForm({
         <input
           type="month"
           value={month}
+          max={maxMonth}
           onChange={e => setMonth(e.target.value)}
           className="rounded border bg-white p-2 text-sm"
         />
+        <p className="text-xs text-muted mt-1">
+          Only completed calendar months can be reported. The current month becomes available on the 1st of the following month.
+        </p>
       </div>
 
       <div>
