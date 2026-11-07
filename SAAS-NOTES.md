@@ -6,10 +6,9 @@ Target shape per Carl's intent (2026-10-13): modest — "tool for my own future 
 
 ## Hardcoded single-tenant assumptions
 
-- **Portfolio code `'KGF'`** hardcoded in `src/lib/reports/data.ts` and report generation. Would become `tenant_id` lookup.
-- **Property short codes `GH / KH / NH`** mapped to Dropbox folder names in `src/lib/dropbox.ts` (`PROPERTY_FOLDER_NAMES`). Needs to be data-driven per tenant.
-- **Dropbox report path** defaults to `/FMX/04_CLIENTS/KGF/Client-wide/4. Reporting/FMX` — bakes tenant into the path. Per-tenant tokens + roots needed.
-- **Dropbox photo path** same issue — `/FMX/04_CLIENTS/KGF/{Property}/02_Photos/...`
+- ~~Portfolio code `'KGF'`~~ — reports, dashboard and nav are client-scoped since 2026-10-26 / 2026-11-06. `'KGF'` survives only as a default when no client is picked.
+- ~~Property/Dropbox folder names hard-coded~~ — now data-driven from `clients.dropbox_folder`, `clients.dropbox_reports_path`, `properties.dropbox_folder`, `properties.dropbox_photos_path` (2026-11-06). `PROPERTY_FOLDER_NAMES` and the KGF report path remain only as fallbacks. Per-tenant Dropbox tokens still needed for SaaS.
+- **Clients are CMS's clients, not tenants.** The client layer (clients → agreements → service lines, contacts, sites, jobs) is the unit a future tenant (an FM operator like CMS) would own many of. If FMX ever goes multi-operator, add `operator_id` above `clients`, not instead of it.
 - **`QUICK_ADD_SECRET`** is a shared operator password. Per-tenant Supabase Auth (magic link) needed before any external user can log in.
 - **Single Supabase project** — all data in one DB, no RLS tenant scoping yet. Either stay single-DB with `tenant_id` + RLS, or go per-tenant project.
 - **Single WhatsApp number** (CMS). SaaS customers would need their own WABA + token per tenant, or we broker everything through one number with routing — the first is simpler, the second is cheaper for the customer.
@@ -30,7 +29,7 @@ If Carl takes a second client this quarter without any SaaS work:
 
 1. New Supabase project (or new schema in the existing project)
 2. Fork env vars; new `QUICK_ADD_SECRET`
-3. Add `PROPERTY_FOLDER_NAMES` entries for the new client's property codes
+3. ~~Add `PROPERTY_FOLDER_NAMES` entries~~ — not needed any more: a new CMS client is FMX menu → More → + New client, then agreement, contacts, sites on the manage page (about 5 minutes, no deploy)
 4. New Vercel project OR new domain pointed at a different branch
 5. Dropbox folder structure under `/FMX/04_CLIENTS/{NewClient}/...`
 6. Fresh WhatsApp Business Account for the client's number (or share CMS's for now)

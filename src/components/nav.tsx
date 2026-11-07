@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 
 const LINKS = [
   { href: '/',            label: 'Dashboard' },
+  { href: '/clients',     label: 'Clients' },
   { href: '/properties',  label: 'Properties' },
   { href: '/defects',     label: 'Defects' },
   { href: '/assets',      label: 'Assets' },
@@ -53,11 +54,13 @@ export default function Nav({ quickAddKey }: { quickAddKey?: string }) {
   const newAssetHref     = withKey('/new-asset');
   const serviceLogHref   = withKey('/service-log');
   const newVendorHref    = withKey('/new-vendor');
+  const newClientHref    = withKey('/clients/new');
 
   const moreActions = [
     { href: newAssetHref,   label: '+ Add asset',    hint: 'Register new equipment' },
     { href: serviceLogHref, label: 'Log service',    hint: 'Record a service event' },
     { href: newVendorHref,  label: '+ Add vendor',   hint: 'Register a contractor' },
+    { href: newClientHref,  label: '+ New client',   hint: 'Set up a client, agreement and sites' },
   ];
 
   // Match current pathname against link href for highlighting
@@ -114,6 +117,21 @@ export default function Nav({ quickAddKey }: { quickAddKey?: string }) {
               </div>
             </div>
           )}
+        </div>
+
+        {/* -------- Wide screens: one-tap links -------- */}
+        <div className="hidden xl:flex items-center gap-0.5 flex-1 min-w-0">
+          {LINKS.map(l => (
+            <Link
+              key={l.href}
+              href={l.href}
+              className={`px-2 py-1.5 rounded text-sm whitespace-nowrap transition ${
+                isActive(l.href) ? 'text-navy font-semibold bg-blue-50' : 'text-muted hover:text-navy hover:bg-gray-50'
+              }`}
+            >
+              {l.label}
+            </Link>
+          ))}
         </div>
 
         {/* -------- Right: Action buttons -------- */}

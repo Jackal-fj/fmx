@@ -4,7 +4,7 @@ A one-shot cold-start briefing so you can land fixes without re-learning the lay
 
 ## What FMX is
 
-Facilities Management eXchange — a Next.js 14 App Router app that Carl (sole operator, CMS Fiji) uses to run facilities management for KGF's three Suva properties: **GH** (Gunu House), **KH** (Korobasaga), **NH** (Naibati House). Portfolio code is **KGF**.
+Facilities Management eXchange — a Next.js 14 App Router app that Carl (sole operator, CMS Fiji) uses to run facilities management for several clients. **Client is the parent of everything**: KGF (owner; GH Gunu House, KH Korobasaga, NH Naibati House), OOFI (One & Only Fiji sales facility), HW (Huawei, occupier; HW-001 office, HW-002 Morrison Apartments). Add clients in-app (More → + New client); no code change needed.
 
 Owner: Carl Probert — carl@cmsfiji.com. Single-tenant, single-operator. He uses it mostly on his phone.
 
@@ -27,6 +27,9 @@ src/
   app/
     api/whatsapp/        - Meta Cloud API webhook (verify + inbound messages)
     assets/              - asset list + /[id] detail + /[id]/edit
+    clients/             - client list, /[code] hub, /[code]/manage (all edit forms, ?open=client|agreements|contacts|properties|services|jobs), /new
+                           actions.ts = saveClient/saveAgreement/saveContact/saveProperty/saveServiceLine/saveWorkOrder
+                           fields.ts  = one field spec per form (create + edit share it)
     defects/             - defect list + /[number] detail
     dispatch/[number]/   - send defect to vendor via WhatsApp
     maintenance/         - PM schedule dashboard
@@ -43,11 +46,13 @@ src/
   components/
     nav.tsx              - top nav with FMX dropdown + action buttons
     badge.tsx            - status/severity/condition pill
+    action-form.tsx      - generic mobile form bound to a server action ({ok,error,redirectTo})
   lib/
     supabase.ts          - server client (service role key)
     whatsapp.ts          - Meta Cloud API client
     dropbox.ts           - Dropbox v2 upload (reports mirror)
     asset-code.ts        - auto-generated asset codes
+    clients.ts           - client-layer option lists (must match DB CHECKs), tones, money/date format
     reports/
       data.ts            - fetch snapshot for a reporting period
       generate.ts        - buildPropertyReport, buildPortfolioReport (docx)
@@ -57,7 +62,13 @@ src/
 
 Key tables — look at the actual schema with `list_tables` or `execute_sql` before changing:
 
-- `properties` — GH, KH, NH + the KGF virtual portfolio row. `short_code` is the public identifier.
+- `clients` — the parent. `short_code` is the URL id. Has client_type, legal/TIN/Xero, `dropbox_folder` + `dropbox_reports_path`.
+- `client_contacts` — role (decision_maker/approver/site/accounts/ap_inbox/tenant/other), one active primary per client (unique index), receives_invoices.
+- `client_agreements` — AGR-{client}-NNN (trigger, numbered per client), type, status (tender→active…), term, billing, PO, invoice requirements, mgmt fee, monthly value, float, bond, CPI.
+- `client_overview` (view) — one row per client with primary contact, current agreement and counts. Use it for lists.
+- `properties` — sites, each belongs to one client. `short_code` is the public identifier. Optional `dropbox_folder`, `dropbox_photos_path`.
+- `service_contracts` — service lines; optional `agreement_id`, `line_no`, `fee_basis`, `management_fee_pct`. Trigger rejects a line whose agreement/property belongs to another client.
+- `work_orders` — jobs (WO-YYYY-NNNN). `client_id` required (copied from property by trigger; property optional for client-wide jobs). `quote_ref`, `invoice_ref`.
 - `spaces` — floors/rooms within a property.
 - `assets` — equipment (AC, lifts, pumps, lights, gensets…). `asset_code` auto-generated. Soft-delete via `active=false`.
 - `asset_service_events` — history. `event_type` is `service` | `install` | `upgrade` | `replacement` | `inspection`.
@@ -65,7 +76,7 @@ Key tables — look at the actual schema with `list_tables` or `execute_sql` bef
 - `defect_updates` — audit trail of status changes + vendor assignments.
 - `providers` — vendors/contractors. WhatsApp dispatch uses `whatsapp_number`.
 - `whatsapp_messages` — full thread per defect (inbound + outbound).
-- `report_runs` — log of every report generation (month, scope, storage_path, size).
+- `report_runs` — log of every report generation (month, scope, storage_path, size). `client_id` auto-filled by trigger.
 
 Storage buckets:
 - `reports` — generated docx files at `{YYYY-MM}/{filename}`. Signed-URL download via server action.
@@ -130,7 +141,10 @@ startTransition(async () => {
 ```
 
 ### 5. Dropbox report mirror
-Reports save to Supabase Storage (source of truth) and best-effort mirror to Dropbox at `/FMX/04_CLIENTS/KGF/Client-wide/4. Reporting/FMX/{YYYY-MM}/`. Mirror only runs if `DROPBOX_ACCESS_TOKEN` is set. Non-blocking — Supabase copy is authoritative.
+Reports save to Supabase Storage (source of truth) and best-effort mirror to Dropbox. Paths come from the DB: `/FMX/04_CLIENTS/{clients.dropbox_folder or code}/{clients.dropbox_reports_path or Reports}/{YYYY-MM}/` and photos at `/{client folder}/{properties.dropbox_folder}/{properties.dropbox_photos_path or 02_Photos}/{YYYY-MM}/{DEF}/`. Blank columns fall back to the historical layout (KGF reports still go to `KGF/Client-wide/4. Reporting/FMX/`). Mirror only runs if `DROPBOX_ACCESS_TOKEN` is set. Non-blocking — Supabase copy is authoritative.
+
+### 6. Local testing
+The cloud sandbox cannot reach Supabase. To click-test, mirror the schema into a local Postgres 16 + PostgREST behind a tiny `/rest/v1` proxy and build with `NEXT_PUBLIC_SUPABASE_URL` pointed at it (NEXT_PUBLIC vars are inlined at build time, so rebuild after changing them).
 
 ## Deploy
 

@@ -1,9 +1,12 @@
 import Link from 'next/link';
+import { unstable_noStore as noStore } from 'next/cache';
 import { supabaseServer } from '@/lib/supabase';
 import GenerateForm from './generate-form';
 import DownloadButton from './download-button';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
 function fmtSize(bytes: number | null): string {
   if (bytes == null) return '—';
@@ -22,6 +25,7 @@ export default async function ReportsPage({
 }: {
   searchParams: { key?: string; saved?: string; month?: string };
 }) {
+  noStore();
   const key = process.env.QUICK_ADD_SECRET || '';
   const generateEnabled = !!key;
   const urlKey = (searchParams.key || '').trim();
@@ -32,11 +36,11 @@ export default async function ReportsPage({
   const [{ data: runs }, { data: properties }, { data: clients }] = await Promise.all([
     supabaseServer
       .from('report_runs')
-      .select('id, report_month, scope, short_code, storage_path, filename, file_size_bytes, generated_at, generated_by')
+      .select('id, client_id, report_month, scope, short_code, storage_path, filename, file_size_bytes, generated_at, generated_by')
       .order('report_month', { ascending: false })
       .order('scope', { ascending: false })
       .order('short_code', { ascending: true })
-      .limit(200),
+      .limit(500),
     supabaseServer
       .from('properties')
       .select('short_code, name, client:client_id ( short_code )')
@@ -44,7 +48,7 @@ export default async function ReportsPage({
       .order('short_code'),
     supabaseServer
       .from('clients')
-      .select('short_code, name')
+      .select('id, short_code, name')
       .eq('active', true)
       .order('short_code'),
   ]);
@@ -54,11 +58,15 @@ export default async function ReportsPage({
     (p.client as { short_code: string } | null)?.short_code === selectedClient,
   );
 
+  // Only the selected client's runs (client_id is auto-filled by trigger).
+  const selectedClientId = (clients || []).find((c: any) => c.short_code === selectedClient)?.id;
+  const clientRuns = (runs || []).filter((r: any) => r.client_id === selectedClientId);
+
   // Group by month
   type Group = { month: string; rows: any[] };
   const groups: Group[] = [];
   const groupMap = new Map<string, Group>();
-  for (const r of runs || []) {
+  for (const r of clientRuns) {
     if (!groupMap.has(r.report_month)) {
       const g = { month: r.report_month, rows: [] };
       groupMap.set(r.report_month, g);
@@ -120,7 +128,7 @@ export default async function ReportsPage({
 
       {groups.length === 0 && (
         <div className="rounded-lg border bg-white p-6 text-sm text-muted text-center">
-          No reports generated yet. Click <strong>Generate 4 reports</strong> above to produce the first set.
+          No reports generated for this client yet. Use the form above to produce the first set.
         </div>
       )}
 

@@ -5,6 +5,7 @@ import { fetchReportSnapshot } from '@/lib/reports/data';
 import { buildPropertyReport, buildPortfolioReport } from '@/lib/reports/generate';
 import { uploadReportToDropbox, isDropboxConfigured } from '@/lib/dropbox';
 import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
 
 type Result = { ok: boolean; error?: string; count?: number };
 
@@ -40,7 +41,7 @@ export async function generateReports(formData: FormData): Promise<Result> {
   }
 
   try {
-    const snap = await fetchReportSnapshot(client);
+    const snap = await fetchReportSnapshot(client, month);
     let count = 0;
 
     for (const scope of scopes) {
@@ -66,6 +67,8 @@ export async function generateReports(formData: FormData): Promise<Result> {
       }
     }
 
+    revalidatePath('/reports');
+    revalidatePath(`/clients/${client}`);
     redirect(`/reports?key=${encodeURIComponent(key)}&saved=${count}&month=${month}&client=${encodeURIComponent(client)}`);
   } catch (e: any) {
     if (e?.digest?.startsWith?.('NEXT_REDIRECT')) throw e;

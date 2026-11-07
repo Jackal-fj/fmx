@@ -7,7 +7,48 @@
 // Uses a scoped App-Folder or Full access token. Set DROPBOX_ACCESS_TOKEN in
 // Vercel env vars.
 
+import { supabaseServer } from '@/lib/supabase';
+
 const UPLOAD_URL = 'https://content.dropboxapi.com/2/files/upload';
+
+// Folder overrides now live in the DB (clients.dropbox_folder,
+// clients.dropbox_reports_path, properties.dropbox_folder,
+// properties.dropbox_photos_path). Anything left blank falls back to the
+// historical hard-coded layout below, so existing KGF/OOFI paths are unchanged.
+type FolderOverrides = {
+  clientFolder?: string | null;
+  reportsPath?: string | null;
+  propertyFolder?: string | null;
+  photosPath?: string | null;
+};
+
+const trimSlashes = (s?: string | null) => (s || '').trim().replace(/^\/+|\/+$/g, '');
+
+async function clientOverrides(clientShortCode: string): Promise<FolderOverrides> {
+  try {
+    const { data } = await supabaseServer
+      .from('clients')
+      .select('dropbox_folder, dropbox_reports_path')
+      .eq('short_code', clientShortCode)
+      .maybeSingle();
+    return { clientFolder: data?.dropbox_folder, reportsPath: data?.dropbox_reports_path };
+  } catch {
+    return {};
+  }
+}
+
+async function propertyOverrides(propertyShortCode: string): Promise<FolderOverrides> {
+  try {
+    const { data } = await supabaseServer
+      .from('properties')
+      .select('dropbox_folder, dropbox_photos_path')
+      .eq('short_code', propertyShortCode)
+      .maybeSingle();
+    return { propertyFolder: data?.dropbox_folder, photosPath: data?.dropbox_photos_path };
+  } catch {
+    return {};
+  }
+}
 
 export function isDropboxConfigured(): boolean {
   return !!process.env.DROPBOX_ACCESS_TOKEN;
@@ -17,8 +58,14 @@ export function dropboxReportPath(
   clientShortCode: string,
   reportMonth: string,
   filename: string,
+  o: FolderOverrides = {},
 ): string {
   const base = (process.env.DROPBOX_CLIENTS_ROOT || '/FMX/04_CLIENTS').replace(/\/+$/, '');
+  const clientFolder = trimSlashes(o.clientFolder);
+  const reportsPath = trimSlashes(o.reportsPath);
+  if (clientFolder || reportsPath) {
+    return `${base}/${clientFolder || clientShortCode}/${reportsPath || 'Reports'}/${reportMonth}/${filename}`;
+  }
   // KGF uses the historical path with the "4. Reporting" sub-folder; new
   // clients get a flatter structure. Override individually via env if needed.
   if (clientShortCode === 'KGF') {
@@ -45,10 +92,13 @@ export function dropboxDefectPhotoPath(
   defectNumber: string,
   yearMonth: string,
   filename: string,
+  o: FolderOverrides = {},
 ): string {
   const base = (process.env.DROPBOX_CLIENTS_ROOT || '/FMX/04_CLIENTS').replace(/\/+$/, '');
-  const propertyFolder = PROPERTY_FOLDER_NAMES[propertyShortCode] || propertyShortCode;
-  return `${base}/${clientShortCode}/${propertyFolder}/02_Photos/${yearMonth}/${defectNumber}/${filename}`;
+  const clientFolder = trimSlashes(o.clientFolder) || clientShortCode;
+  const propertyFolder = trimSlashes(o.propertyFolder) || PROPERTY_FOLDER_NAMES[propertyShortCode] || propertyShortCode;
+  const photos = trimSlashes(o.photosPath) || '02_Photos';
+  return `${base}/${clientFolder}/${propertyFolder}/${photos}/${yearMonth}/${defectNumber}/${filename}`;
 }
 
 export async function uploadDefectPhotoToDropbox(
@@ -63,7 +113,8 @@ export async function uploadDefectPhotoToDropbox(
   const token = process.env.DROPBOX_ACCESS_TOKEN;
   if (!token) return { ok: false, error: 'DROPBOX_ACCESS_TOKEN not configured' };
 
-  const path = dropboxDefectPhotoPath(clientShortCode, propertyShortCode, defectNumber, yearMonth, filename);
+  const [c, p] = await Promise.all([clientOverrides(clientShortCode), propertyOverrides(propertyShortCode)]);
+  const path = dropboxDefectPhotoPath(clientShortCode, propertyShortCode, defectNumber, yearMonth, filename, { ...c, ...p });
   return uploadRaw(token, path, buffer, mimeType);
 }
 
@@ -76,7 +127,7 @@ export async function uploadReportToDropbox(
   const token = process.env.DROPBOX_ACCESS_TOKEN;
   if (!token) return { ok: false, error: 'DROPBOX_ACCESS_TOKEN not configured' };
 
-  const path = dropboxReportPath(clientShortCode, reportMonth, filename);
+  const path = dropboxReportPath(clientShortCode, reportMonth, filename, await clientOverrides(clientShortCode));
   return uploadRaw(token, path, buffer, 'application/octet-stream');
 }
 

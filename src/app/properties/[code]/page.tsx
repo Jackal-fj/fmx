@@ -2,18 +2,22 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { supabaseServer } from '@/lib/supabase';
 import Badge, { ratingTone, severityTone } from '@/components/badge';
+import { unstable_noStore as noStore } from 'next/cache';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
 type ComponentScore = { label?: string; average?: number; avg_score?: number };
 
 export default async function PropertyDetail({ params }: { params: { code: string } }) {
+  noStore();
   const sb = supabaseServer;
-  const code = params.code.toUpperCase();
+  const code = decodeURIComponent(params.code).toUpperCase();
 
   const { data: property } = await sb
     .from('properties')
-    .select('*')
+    .select('*, client:client_id ( short_code, name )')
     .eq('short_code', code)
     .maybeSingle();
 
@@ -41,14 +45,33 @@ export default async function PropertyDetail({ params }: { params: { code: strin
   return (
     <div>
       <div className="mb-6">
-        <Link href="/" className="text-sm text-muted hover:text-navy">← Dashboard</Link>
+        <div className="text-sm text-muted">
+          <Link href="/clients" className="hover:text-navy">Clients</Link>
+          {property.client && (<>
+            <span className="mx-1.5">/</span>
+            <Link href={`/clients/${property.client.short_code}`} className="hover:text-navy">{property.client.name}</Link>
+          </>)}
+          <span className="mx-1.5">/</span>
+          <span>{property.short_code}</span>
+        </div>
         <div className="flex items-baseline justify-between mt-2">
           <h1 className="text-3xl font-bold text-navy">{property.name}</h1>
           <span className="text-muted">{property.short_code}</span>
         </div>
         <p className="text-muted mt-1">
-          {property.tenant_name}{property.tenant_short_code ? ` (${property.tenant_short_code})` : ''}  •  {property.address}
+          {[
+            property.tenant_name ? `${property.tenant_name}${property.tenant_short_code ? ` (${property.tenant_short_code})` : ''}` : null,
+            property.address,
+          ].filter(Boolean).join('  •  ') || '—'}
         </p>
+        {process.env.QUICK_ADD_SECRET && (
+          <div className="flex gap-2 mt-3">
+            <Link href={`/new-defect?property=${encodeURIComponent(property.short_code)}&key=${encodeURIComponent(process.env.QUICK_ADD_SECRET)}`}
+              className="rounded-full bg-navy text-white text-sm font-semibold px-4 py-2 hover:bg-blue-900">+ Log defect here</Link>
+            <Link href={`/defects?property=${encodeURIComponent(property.short_code)}`}
+              className="rounded-full border border-gray-300 text-navy text-sm font-semibold px-4 py-2 hover:border-navy">All defects</Link>
+          </div>
+        )}
       </div>
 
       {/* FCA */}
