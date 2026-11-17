@@ -799,7 +799,24 @@ These are each S-sized — the pattern is: write a thin server-action wrapper th
 
 ### [FMX-048] Append-only data model for field capture
 
-- Type: story · Size: M · Status: next · Part of: FMX-041
+- Type: story · Size: M · Status: done 2026-11-18 · Part of: FMX-041
+
+**Done notes:** Migration `fmx048_append_only_field_capture` adds four tables, every row immutable after insert (design principle #9 — late offline rows can never overwrite completed work):
+
+- **`inspection_sessions`** — one run of a template. Client-assigned uuid. `started_at` immediately, `completed_at` on finish. Signature + attendance photo + notes attach on completion.
+- **`inspection_results`** — one answered checklist item. Carries a **snapshot** of `question` + `kind` so late-syncing rows render correctly even if the template was edited after capture. `failed` + `failure_reason` + nullable `defect_id` for the FMX-056 auto-raise pipeline. Answer value lives in one of `answer_bool` / `answer_number` / `answer_text` matching `kind`. Photos as `text[]`.
+- **`scan_events`** — one QR scan. `target_kind` enum (property / asset / client / agreement / defect / vendor / other), `target_id`, optional lat/lng + `context` (e.g. `inspection_start`, `dispatch_check`, `yard_receive`). Powers both scan analytics today and the Phase-2 custody chain tomorrow.
+- **`readings`** — one meter/gauge reading against an asset. Free-text `kind` (hours / kWh / fuel_litres / etc), numeric + text + unit fields. Feeds consumption, hours-run and service-interval triggers.
+
+**Idempotency.** Every write is an `upsert(onConflict: 'id')` on the client-assigned uuid. Phones mint uuids via `crypto.randomUUID()` so FMX-046's queue can retry safely — the second attempt just no-ops.
+
+**Thin server actions in `src/lib/field-capture/actions.ts`:** `startSession`, `completeSession`, `recordResult`, `recordScan`, `recordReading`. Each validates the payload shape and the secret key, then upserts. Types shared with the client in `src/lib/field-capture/types.ts`.
+
+**No UI in this ship.** FMX-055 (checklist runner), FMX-057 (close-with-evidence), FMX-058 (report assembler) are the consumers. FMX-053 scanner now has a `recordScan` to call too — raised as a tiny follow-up.
+
+**Follow-ups:**
+
+- **FMX-066** — Wire FMX-053 scanner to call `recordScan(...)` so every scan lands in `scan_events`. XS.
 
 **AC**
 
