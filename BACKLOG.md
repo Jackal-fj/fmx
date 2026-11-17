@@ -35,6 +35,127 @@ One line per story. INVEST form — Independent, Negotiable, Valuable, Estimable
 
 ---
 
+### [FMX-020] Group / sort defects list by severity, trade or date logged
+
+- Type: story · Size: M · Status: next · Raised: 2026-11-17 (Carl) · Depends on: FMX-021
+
+**As** an FM
+**I want** to group or sort the defects list by severity, trade, or date logged (and property / status, which already filter)
+**So that** I can scan the list the way my brain needs it that day — triage mode (severity), dispatch mode (trade), or review mode (recent first)
+
+**Acceptance criteria**
+
+- `/defects` has a "Group by" selector alongside the existing filter chips: options **None** (default, flat list), **Severity**, **Trade**, **Property**, **Month logged**
+- When a grouping is active the rows render under collapsible headers with a count per group; the existing filters still narrow what appears inside each group
+- A separate "Sort by" selector: **Date logged ↓** (default), **Date logged ↑**, **Severity (critical first)**, **Last updated**, **Defect number**
+- Selection persists in the URL (`?group=trade&sort=severity_desc`) so a view can be bookmarked and shared, and the back button works
+- Selection remembered per browser via `localStorage` so the FM lands back in their preferred view next session, overridden by any URL params present
+- Works on mobile — selectors collapse into a single "View" sheet below `sm:` breakpoint
+- Empty-state copy adapts: "No open critical defects" rather than the generic empty message
+
+**Notes**
+
+- Grouping-by-trade depends on FMX-021 (`defects.trade` column + backfill). If FMX-021 slips, ship this story with Severity + Property + Month groupings only and add Trade in a follow-up.
+- Grouping respects the active status filter: grouping by severity under `status=resolved` is useful for post-mortems.
+
+---
+
+### [FMX-021] Add `trade` column to defects — reusing the free-text vocabulary from providers
+
+- Type: tech-debt · Size: S · Status: next · Raised: 2026-11-17
+
+**As** an FM
+**I want** every defect tagged with a trade using the same vocabulary the providers register already uses
+**So that** defects group cleanly against the right vendor list for dispatch, and reports break down by discipline
+
+**Acceptance criteria**
+
+- Supabase: add `defects.trade` as free-text, nullable, no new enum (mirrors `providers.trade`)
+- Form inputs (`/new-defect`, `/update-defect`, promote-from-draft, email-ingest) show a datalist of distinct trades currently in `providers.trade` so Carl can pick an existing value or type a new one — same behaviour the providers form already uses
+- Backfill pass classifies existing defects from `title` + `description` keywords and maps to the closest existing `providers.trade` string; Carl reviews a sample before the full run
+- Platform report breaks down "Open by trade" and "Completed this month by trade"
+- Dispatch page pre-filters the provider dropdown to vendors whose `trade` matches the defect's trade, with a "Show all" toggle
+
+**Notes**
+
+- Free-text, not enum, because the providers vocabulary is already free-text and the two must stay in sync. Tidying the vocabulary itself (casing, splitting "HVAC — AC supply, install, service" from "HVAC") is a separate follow-up, not blocking this story.
+
+---
+
+### [FMX-023] Adopt the KGF FM Performance Report layout as the canonical template
+
+- Type: story · Size: M · Status: next · Raised: 2026-11-17 (Carl) · Reference: `KGF_FM_Performance_Report_2026-11-16.pdf`
+
+**As** an FM presenting monthly performance to a client
+**I want** every generated report to follow the compact 3-page FM Performance layout Carl reviewed on 16 Nov
+**So that** every client gets the same concise, story-led format instead of a heavier legacy platform-report structure
+
+**Target layout (canonical sections, in this order)**
+
+1. **Title block** — Client short name + " – FM Performance Report"; properties listed; reporting period; agreement reference; prepared by
+2. **Headline strip** — single highlighted paragraph: YTD resolved / open, portfolio balance comment, capital count, service-contract count, FM vs gross rent %
+3. **KPIs — Year to date** — 4-card row: Defects resolved (crit/maj/mod/min split) · Open defects (same split) · Capital items (one-line theme) · FM vs Gross Rent (with benchmark range)
+4. **KPIs — Current month** — 4-card row: Defects resolved (severity split) · Defects logged (by property) · Capital / CAPEX (headline item) · Invoiced (ex-VAT, with components)
+5. **Portfolio snapshot** — table: Property · Tenant(s) · Open now · Resolved YTD · Resolved in month · Logged in month, with Portfolio total row
+6. **Monthly spotlight** — 4–6 bullet themes (Capital works · Tenant improvement · Life-safety · Electrical/fit-out · Grounds and costs). Each bullet names the defect refs, contractor, date and value
+7. **Cost against rent — YTD view** — table: Property · Monthly rent VEP · CMS allocation /mo, with Portfolio total and % of gross rent; benchmark footer line
+8. **Capital works delivered under CMS** — table: Install date · Property · Item · Make/Model · Contractor
+9. **Active service contracts (agreement ref)** — table: Service · Property · Provider · Commercials
+10. **Priority open items (critical and major)** — table: Ref · Property · Title
+11. **Forward look — next 6 months** — table: Item · Status and indicative value
+12. **Footer** — data source, confirmation dates, prepared-by line, agreement ref
+
+**Acceptance criteria**
+
+- `/reports` "FM Performance" output matches the layout above, section by section, for any client + period
+- Typography matches the reviewed PDF: sanitised (no em-dashes, no semicolons, no section marks, no smart quotes), navy headings, muted body
+- KPI cards render as light-tinted bands (green-tinted for YTD, amber-tinted for current month) with small-caps labels and large numeric values
+- All counts, splits and values come from the live DB (`defects`, `assets`, `service_contracts`, `properties`, `clients`, `tenancies`) — zero hard-coded figures
+- Current-month section only renders when `period_month < today's month` (preserves the existing hard block on current / future months)
+- The "Monthly spotlight" bullets come from a narrative generator that reads the month's resolved defects, capital installs and invoice lines, grouped into the five themes; a draft is editable before export (stretch — ship with auto only first)
+- Report generates in under 10 seconds for a 3-property portfolio
+- Output fits on exactly 3 pages at A4 for KGF-scale portfolios; larger portfolios paginate cleanly
+
+**Notes**
+
+- Reference PDF is filed in the client's "4. Reporting" folder (dated 2026-11-16).
+- Replaces the longer Platform Report format as the default FM monthly deliverable. The old Platform Report stays available as a secondary option for deep-dives.
+- Depends on FMX-022 for the clean request flow (client → month → scope → type).
+
+---
+
+### [FMX-022] Reports page — clean request flow, separate download history
+
+- Type: story · Size: S · Status: in-progress → done 2026-11-17 · Raised: 2026-11-17 (Carl)
+
+**Done notes:** `report_runs` table already existed. `/reports` now opens straight on the request flow (Client → Month → Scope → Generate) with a single "View history" card at the bottom showing run count + last generated date. Full log moved to `/reports/history` (per-client, grouped by month, re-download preserved). Reused existing GenerateForm + DownloadButton.
+
+**As** an FM
+**I want** a clean fresh flow to request a report — client → month → rollup or specific property → generate
+**So that** the reports page doesn't accumulate visual noise from every past download, and the next report is always one clean path
+
+**Acceptance criteria**
+
+- `/reports` opens on the request flow by default, not on a history list:
+  1. **Client** picker (defaults to the only active client when there's one; otherwise shows cards)
+  2. **Reporting month** picker (defaults to the most recent closed month)
+  3. **Scope**: rollup for the whole client, or a specific property (property picker filtered to that client)
+  4. **Report type** (FM Performance · Platform Report · Monthly Invoice pack, whatever we already produce)
+  5. **Generate** — produces the file and offers download + "Save to client folder" as the two explicit actions
+- Past downloads do NOT show on this page by default
+- A separate `/reports/history` page (or a collapsed "Recent reports" drawer below the request flow) shows the log: date generated, who generated it, client · month · scope · type, re-download link, and a soft-delete action
+- Every generated report is logged to a `report_runs` table (id, client_id, property_id or null, period_month, report_type, generated_at, generated_by, file_path, size_bytes, status)
+- The request flow resets on completion — generating one report doesn't leave filters stuck on the next request
+- Mobile: each step is a single sheet; no horizontal scrolling
+
+**Notes**
+
+- Current state (to confirm before building): the existing `/reports` page lists every previous run inline, which Carl flagged as noise.
+- `report_runs` table is new; migration is part of this story.
+- "Save to client folder" uses the Dropbox client-scoped path already wired for the OOFI / KGF filing conventions.
+
+---
+
 ### [FMX-014] Backfill Nilesh invoice to DEF-2026-0032 / 0047 / 0058
 
 - Type: data · Size: S · Status: blocked (waiting on evidence) · Raised: 2026-11-17
