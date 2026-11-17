@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { supabaseServer } from '@/lib/supabase';
 import StatCard from '@/components/stat-card';
 import Badge, { ratingTone, severityTone } from '@/components/badge';
+import AddDropdown from '@/components/add-dropdown';
 import { unstable_noStore as noStore } from 'next/cache';
 import { AGREEMENT_STATUSES, agreementTone, labelOf } from '@/lib/clients';
 
@@ -115,22 +116,20 @@ export default async function Dashboard() {
         ))}
       </div>
 
-      {/* + Add block — the single place create actions live (FMX-036) */}
+      {/* + Add — single dropdown tile (FMX-036). Hover or tap opens the picker.
+          Updates and service logs intentionally not here: update a defect by
+          selecting that defect; log a service by selecting that asset. */}
       {quickAddKey && (
-        <section className="mb-8 rounded-lg border bg-white">
-          <div className="px-4 py-2.5 border-b flex items-baseline justify-between">
-            <h2 className="text-sm font-bold text-navy uppercase tracking-wide">+ Add</h2>
-            <span className="text-xs text-muted">Create a new record</span>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-px bg-gray-100">
-            <AddTile href={withKey('/new-defect')}    label="+ Log defect"     hint="Raise a new defect"             primary />
-            <AddTile href={withKey('/update-defect')} label="+ Update defect"  hint="Close or change an existing defect" />
-            <AddTile href={withKey('/new-asset')}     label="+ Add asset"      hint="Register new equipment" />
-            <AddTile href={withKey('/new-vendor')}    label="+ Add vendor"     hint="Register a contractor" />
-            <AddTile href={withKey('/service-log')}   label="+ Log service"    hint="Record a service event" />
-            <AddTile href={withKey('/clients/new')}   label="+ New client"     hint="Set up a client, agreement, sites" />
-          </div>
-        </section>
+        <div className="mb-8">
+          <AddDropdown
+            items={[
+              { href: withKey('/new-defect'),  label: 'Defect' },
+              { href: withKey('/new-asset'),   label: 'Asset' },
+              { href: withKey('/new-vendor'),  label: 'Vendor' },
+              { href: withKey('/clients/new'), label: 'Client' },
+            ]}
+          />
+        </div>
       )}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
@@ -233,14 +232,3 @@ export default async function Dashboard() {
   );
 }
 
-function AddTile({ href, label, hint, primary }: { href: string; label: string; hint: string; primary?: boolean }) {
-  return (
-    <Link
-      href={href}
-      className={`block bg-white px-4 py-3 min-h-[76px] hover:bg-blue-50 transition ${primary ? 'sm:col-span-1' : ''}`}
-    >
-      <div className={`text-sm font-semibold ${primary ? 'text-navy' : 'text-navy'}`}>{label}</div>
-      <div className="text-xs text-muted mt-0.5">{hint}</div>
-    </Link>
-  );
-}

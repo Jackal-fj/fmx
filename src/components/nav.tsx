@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import SearchPalette from './search-palette';
 
 type LeafLink = { href: string; label: string };
 type GroupLink = { label: string; children: LeafLink[] };
@@ -275,6 +276,10 @@ export default function Nav({ quickAddKey: _quickAddKey }: { quickAddKey?: strin
           })}
         </div>
 
+        {/* -------- Right: global search -------- */}
+        <div className="shrink-0">
+          <SearchPalette />
+        </div>
       </div>
     </nav>
   );

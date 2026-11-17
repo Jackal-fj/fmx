@@ -452,7 +452,7 @@ Agreement-view-from-deep failure resolved by FMX-031 (search opens any client in
 
 - Type: story · Size: S · Status: done 2026-11-17 · Raised: 2026-11-17 (Carl)
 
-**Done notes:** `+ Add ▾` dropdown and related state removed from `components/nav.tsx` entirely — nav is now navigation-only (`[← Back] FMX [Dashboard · Portfolio · Work · Resources · Reports]`). Mobile hamburger no longer carries the Add section either. Dashboard grew a new `+ Add` section below the client strip, above the stat tiles: 6-tile grid (Log defect · Update defect · Add asset · Add vendor · Log service · New client), 2-col on mobile / 3-col on tablet / 6-col on desktop, min 44pt touch targets, each tile a single-tap into its create form. Dashboard access via FMX wordmark → + Add tile. Design principles updated to note the trade-off was accepted.
+**Done notes (final shape):** `+ Add ▾` dropdown and related state removed from `components/nav.tsx` entirely — nav is now navigation-only (`[← Back] FMX [Dashboard · Portfolio · Work · Resources · Reports]`). Mobile hamburger no longer carries the Add section either. Dashboard carries a single `+ Add ▾` dropdown tile (new `components/add-dropdown.tsx` client component) below the client strip. Hover opens it on desktop; tap opens it on mobile. Dropdown contents: **+ Defect · + Asset · + Vendor · + Client**. Update-defect and log-service deliberately not here — they happen from the defect's own detail page ("Update status") and the asset's own detail page ("Log service event"), which both already exist.
 
 **As** an FM
 **I want** the top navigation to carry navigation only — no create actions — and every "+ Add" action collected into a dedicated block on the dashboard
@@ -483,7 +483,9 @@ Agreement-view-from-deep failure resolved by FMX-031 (search opens any client in
 
 ### [FMX-031] Global search / command palette — reach any entity in 2 taps
 
-- Type: story · Size: M · Status: next · Raised: 2026-11-17 · Follows: FMX-030
+- Type: story · Size: M · Status: done 2026-11-17 · Raised: 2026-11-17 · Follows: FMX-030
+
+**Done notes:** New `components/search-palette.tsx` (client) + `app/api/search/route.ts` (server). Magnifier icon on the right of the nav (replaces the position the old + Add dropdown occupied — nav now reads `[←] FMX [center nav] [🔍]`). Opens a centred sheet with autofocused text input. Debounced 150ms ilike search across `defects`, `clients`, `properties`, `client_agreements`, `assets`, `providers`. Results grouped by type (icon + label + sub), max 5 per group. Arrow-key navigation, Enter opens, Esc closes, `/` opens from anywhere. Recently opened items (5) stored in `localStorage` and shown when the input is empty. Click a result = navigate + close in one gesture = meets the 2-tap rule for every arbitrary entity from the audit (open search = 1, pick result = 2).
 
 **As** an FM on mobile
 **I want** a search icon in the nav that opens a search sheet and lets me jump to any defect, asset, vendor, client, property, or agreement by typing a few characters
