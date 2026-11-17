@@ -4,7 +4,20 @@ One line per story. INVEST form — Independent, Negotiable, Valuable, Estimable
 
 - **Status:** `idea` · `next` · `in-progress` · `done` · `parked` · `blocked`
 - **Type:** `story` (product feature) · `bug` · `tech-debt` · `data` (backfill / reconcile) · `field` (on-site capture)
-- **Size:** S (<1 day) · M (1–3 days) · L (>3 days — split before starting)
+- **Size:** XS (<2 hrs) · S (<1 day) · M (1–3 days) · L (>3 days — split before starting)
+
+---
+
+## Design principles (apply to every story)
+
+Confirmed with Carl 2026-11-17 and binding on everything that follows.
+
+1. **Mobile-first.** The FM lives on a phone on-site. Every page, every new UI element, every form is designed for a 375pt narrow viewport first; desktop is the enhanced case, not the primary target. Thumbs reach the bottom of the screen more easily than the top; primary actions sit low on mobile. Touch targets ≥ 44pt. One-handed navigation is a requirement, not a nice-to-have.
+2. **Two taps maximum to any navigation destination.** From anywhere in the app, reaching any common *destination* (dashboard, client hub, property hub, defect detail, defects list, generate a report) takes ≤ 2 taps. The nav and the dashboard are the two escape hatches that uphold this rule for navigation. Create actions (log defect, add vendor, etc.) live on the dashboard, not the nav, and are allowed to take an extra tap from deep pages — Carl confirmed 2026-11-17 that a cleaner nav is worth the trade-off because adding is less frequent than navigating. Any navigation flow that requires 3+ taps to reach something routine is a bug and raises a cleanup story.
+3. **Scannable, not dense.** Lists over tables on mobile, one piece of information per line, severity / status conveyed with badges, not sentences.
+4. **No modals for things that can be pages.** Modals are a desktop convention that break mobile — the back button should always work.
+
+Every story's acceptance criteria assume these principles — they don't need to be restated. A violation of them is a defect, not a trade-off.
 
 ---
 
@@ -319,7 +332,9 @@ Cleanup deferred to a follow-up: in-page quick-action rows on `/clients/[code]` 
 
 ### [FMX-028] Cleanup — drop in-page quick-add buttons now that `+ Add` menu is global
 
-- Type: tech-debt · Size: S · Status: next · Raised: 2026-11-17 · Follows: FMX-027
+- Type: tech-debt · Size: S · Status: done 2026-11-17 · Raised: 2026-11-17 · Follows: FMX-027
+
+**Done notes:** Quick-actions row on `/clients/[code]` now carries destinations only (Defects · Reports · Manage); + Log defect / + Job / + Contact gone. Per-site `+ Defect` button on each property row removed. On `/properties/[code]` the primary `+ Log defect here` button is removed; "All defects" destination stays. New property / New agreement entries in + Add menu still parked until those standalone create forms exist.
 
 **AC**
 
@@ -332,13 +347,177 @@ Cleanup deferred to a follow-up: in-page quick-action rows on `/clients/[code]` 
 
 ### [FMX-029] Cleanup — remove per-page breadcrumb links superseded by global back button
 
-- Type: tech-debt · Size: XS · Status: next · Raised: 2026-11-17 · Follows: FMX-027
+- Type: tech-debt · Size: XS · Status: done 2026-11-17 · Raised: 2026-11-17 · Follows: FMX-027
+
+**Done notes:** Removed the `← Back to …` header links from 14 pages: client hub, agreement view, client new, client manage, reports history, defect detail, dispatch, update-defect, promote-draft, new-vendor, new-asset, asset detail, asset edit, vendor detail, vendor edit, service-log entry, maintenance bulk-set. `←` links inside 404 / not-found cards kept (they're mid-page error affordances, not nav redundancy). Multi-level breadcrumbs on `/properties/[code]` kept (they provide context beyond just "back").
 
 **AC**
 
 - Remove `← Clients`, `← Kinetic Growth Fund`, `← Back to defect` style breadcrumb links from `/clients/[code]`, `/clients/[code]/agreements/[agreement_code]`, `/defects/[number]`, `/dispatch/[number]`, `/reports/history`
 - Keep the global back button (FMX-027) as the single back affordance
 - Audit every page's header: if there's a `← Something` link that only goes back one level, it goes
+
+---
+
+### [FMX-030] Audit — mobile-first + 2-tap route to every destination
+
+- Type: story · Size: S · Status: done 2026-11-17 · Raised: 2026-11-17 (Carl)
+
+**Done notes — tap-count audit (post-FMX-027 nav state)**
+
+Nav state used: `[← Back] FMX [Dashboard · Portfolio▾ · Work▾ · Resources▾ · Reports] [+ Add▾]`. FMX wordmark = Dashboard link. Dashboard tiles + recent-defects rows + client-strip cards + property cards all clickable (FMX-012).
+
+| Destination | From Dashboard | From a deep page (defect detail) | Verdict |
+|---|---|---|---|
+| Dashboard | 0 | 1 (FMX wordmark) | ✓ |
+| Clients list | 2 (Portfolio▾ → Clients) | 2 (FMX → Clients card on strip) † | ✓ |
+| Specific recent client (KGF/OOFI) | 1 (client strip card) | 2 (FMX → KGF card) | ✓ |
+| Properties list | 2 (Portfolio▾ → Properties) | 3 (Back → Portfolio▾ → Properties) ✗ | **fail** |
+| Specific recent property | 1 (property card) | 2 (FMX → property card) | ✓ |
+| Defects list (open, default) | 1 (Open defects tile) | 2 (FMX → tile) | ✓ |
+| Defects list filtered critical | 1 (Critical tile) | 2 | ✓ |
+| Specific recent defect (last 14d) | 1 (recent-defects row) | 2 (FMX → recent row) | ✓ |
+| **Arbitrary non-recent defect** | 3 (Work▾ → Defects → row) ✗ | 3 (FMX → Work▾ → Defects → row) ✗ | **fail** |
+| Maintenance list | 2 (Work▾ → Maintenance) | 2 | ✓ |
+| Assets list | 2 (Work▾ → Assets) | 2 | ✓ |
+| Arbitrary asset | 3 (Work▾ → Assets → row) ✗ | 3 ✗ | **fail** |
+| Vendors list | 2 (Resources▾ → Vendors) | 2 | ✓ |
+| Arbitrary vendor | 3 (Resources▾ → Vendors → row) ✗ | 3 ✗ | **fail** |
+| Email Inbox | 2 (Resources▾ → Email Inbox) | 2 | ✓ |
+| Reports | 1 (direct link) | 1 | ✓ |
+| Report history | 2 (Reports → View history) | 2 | ✓ |
+| Agreement for a visible client | 2 (client card → agreement row) | 3 (FMX → card → row) ✗ | **fail from deep** |
+| Any + Add action (defect/asset/vendor/service/client) | 2 (+ Add▾ → item) | 2 | ✓ |
+
+† "Clients card on strip" relies on the dashboard's horizontal client strip. On a 4+ client portfolio the target client may not be in the first 1-2 cards and requires horizontal scroll — counts as 1 tap but add thumb scroll time.
+
+**Headline findings**
+
+- **Four destinations fail the 2-tap rule from the dashboard**: Properties list (minor; recent properties are already 1 tap), and crucially *any arbitrary defect / asset / vendor / contact* when it isn't in the dashboard's recent list. That's the biggest gap — once a defect scrolls off the recent-14-days window, it's always 3+ taps.
+- **From a deep page**: anything not reachable from the dashboard tiles slips to 3 taps. The back-button + nav-dropdowns pair isn't enough.
+- **Root cause**: nav dropdowns insert an intermediate tap (open dropdown → pick item → ...). Every intermediate tap costs us the 2-tap budget.
+
+**Mobile layout audit (code review at 375pt baseline, confirmed where possible from component widths)**
+
+| Page | Concern | Severity |
+|---|---|---|
+| `/` Dashboard | Recent defects uses `<table>`; 5 columns at 375pt will crush or overflow horizontally. KPI stat cards 2-col on sm — fine. | **medium** — redo as list-cards below `md:` |
+| `/defects` | Table-based list; same width issue. Filter chips wrap but become tall. | **medium** — mobile list-card layout |
+| `/clients/[code]` | Collapsed agreement rows: good. Service lines table nested in agreement groups: narrow but readable. Jobs list: table-ish. | **low-medium** |
+| `/properties/[code]` | FCA table + Components grid: multi-column at desktop, likely overflows on 375pt. | **medium** |
+| `/clients/[code]/agreements/[agreement_code]` | 1-col at sm. ✓ | ✓ |
+| `/reports` + `/reports/history` | Form + card list. ✓ | ✓ |
+| `/vendors`, `/assets`, `/maintenance` | All table-dominant. | **medium** |
+| `/email-inbox` | Message list. Check attachment layout. | low |
+| Add forms (new-defect, new-asset, new-vendor, service-log) | Likely OK — single-column forms. Primary button on bottom? To check. | low |
+
+**Follow-up cleanup stories raised (FMX-031 through FMX-035)**
+
+- **FMX-031** — Global search/command palette (⌘K / tap on nav search icon) — fixes every "arbitrary defect/asset/vendor" fail in one move. Size M.
+- **FMX-032** — Mobile list-card layout for the Defects list — replaces `<table>` below `md:` breakpoint. Size S.
+- **FMX-033** — Mobile list-card layout for Vendors, Assets, Maintenance lists. Size S.
+- **FMX-034** — Dashboard "Recent defects" as list-cards on mobile; table only on `md:` and up. Size XS.
+- **FMX-035** — Property page FCA + components table: mobile layout fix. Size S.
+
+Agreement-view-from-deep failure resolved by FMX-031 (search opens any client instantly). Properties-list-from-deep fail fixed by either promoting Properties to a top-level nav item (Portfolio becomes direct link to Properties, Clients tucked under + Add or a secondary link) — captured as a decision inside FMX-031.
+
+**As** an FM using FMX on a phone on-site
+**I want** every common destination reachable in ≤ 2 taps from anywhere, and every page sized and laid out for mobile first
+**So that** the app is fast enough to use one-handed while standing in front of equipment
+
+**Acceptance criteria — Tap-count audit**
+
+- Enumerate every "common destination": dashboard · each client hub · each property hub · defect detail (via Recent on dashboard) · defects list · maintenance list · assets list · vendors list · reports list · email inbox · add any entity (defect / asset / vendor / client / service event)
+- From the dashboard, document the tap count to each; anything > 2 raises a sub-story to shorten
+- From a deep page (e.g. defect detail), same measurement; back button + nav Group dropdowns together should keep the count ≤ 2 for every destination
+- Known candidates for a shortening story: reaching the agreement view (currently Dashboard → KGF client card → Agreement row = 3 taps — may need a dashboard-level "Open agreement" shortcut on the client strip card, or a search bar)
+
+**Acceptance criteria — Mobile layout audit**
+
+- Every page renders cleanly on 375pt viewport (iPhone SE baseline): no horizontal scroll, no cut-off tables, no overflowing badges
+- Table-heavy pages (defects list, service contracts, open items reports) use a mobile list-card layout below `md:` rather than cramming a wide table
+- Every tap target ≥ 44 × 44 pt, confirmed on nav, dashboard tiles, list rows, form controls
+- Primary actions on forms sit at the bottom of the viewport, reachable with the thumb; secondary actions (Cancel) are smaller / less prominent
+- No modals — any flow currently in a modal becomes its own route
+
+**Deliverable**
+
+- A written audit (markdown table in BACKLOG) listing every destination and its current tap count from dashboard + from a representative deep page
+- Each failing destination raised as its own cleanup story (FMX-031+), sized XS/S
+- Each layout defect raised the same way
+
+---
+
+### [FMX-031] Global search / command palette — reach any entity in 2 taps
+
+- Type: story · Size: M · Status: next · Raised: 2026-11-17 · Follows: FMX-030
+
+**As** an FM on mobile
+**I want** a search icon in the nav that opens a search sheet and lets me jump to any defect, asset, vendor, client, property, or agreement by typing a few characters
+**So that** no matter how deep I am in the app, any entity is ≤ 2 taps: tap search, tap the result
+
+**AC**
+
+- Search icon in the top nav (magnifier glyph); keyboard shortcut `/` on desktop
+- Opens a bottom sheet on mobile / centred modal-page on desktop, with a single text input autofocused
+- Types resolved by prefix match: defect number (DEF-2026-0211), asset code, vendor name, client short code, property short code, agreement code, person name
+- Results grouped by type with icon, max 5 per group, keyboard-navigable
+- Enter opens the top result; tap opens the picked result
+- Recently opened entities appear when the input is empty (5 most recent, stored in `localStorage` per browser)
+- Tapping a result navigates and closes the sheet in one gesture — meets the 2-tap rule
+
+**Fixes:** every "arbitrary defect / asset / vendor" 3-tap failure from the audit.
+
+---
+
+### [FMX-032] Mobile list-card layout for the Defects list
+
+- Type: tech-debt · Size: S · Status: next · Raised: 2026-11-17 · Follows: FMX-030
+
+**AC**
+
+- Below `md:` breakpoint, `/defects` renders each defect as a card (ref + severity badge · property chip · title wrapped · age + date)
+- Table layout retained for `md:` and up
+- Filter chips stay above the list on both layouts
+- No horizontal scroll at 375pt
+
+---
+
+### [FMX-033] Mobile list-card layout for Vendors, Assets, Maintenance
+
+- Type: tech-debt · Size: S · Status: next · Raised: 2026-11-17 · Follows: FMX-030
+
+**AC**
+
+- Below `md:` breakpoint, each list renders as cards per its own schema
+- Vendors: name + trade + rating + contact-chip (📞 / WhatsApp)
+- Assets: name + property + condition badge + next-service date
+- Maintenance: asset + property + due date + status badge
+- Table layout retained for `md:` and up
+
+---
+
+### [FMX-034] Dashboard "Recent defects" as list-cards on mobile
+
+- Type: tech-debt · Size: XS · Status: next · Raised: 2026-11-17 · Follows: FMX-030
+
+**AC**
+
+- Below `md:` breakpoint, Recent defects renders as rows: defect number + severity badge · title · property · date
+- No horizontal overflow at 375pt
+- Whole row remains the click target (preserves FMX-012)
+
+---
+
+### [FMX-035] Mobile layout fix — property page FCA + components
+
+- Type: tech-debt · Size: S · Status: next · Raised: 2026-11-17 · Follows: FMX-030
+
+**AC**
+
+- `/properties/[code]` FCA block and the 9-component grid stack vertically below `md:` breakpoint
+- Component rating badges keep their colour; score values right-aligned
+- No horizontal scroll at 375pt
 
 ---
 
