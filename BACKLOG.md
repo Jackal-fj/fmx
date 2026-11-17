@@ -50,7 +50,9 @@ Every story's acceptance criteria assume these principles — they don't need to
 
 ### [FMX-020] Group / sort defects list by severity, trade or date logged
 
-- Type: story · Size: M · Status: next · Raised: 2026-11-17 (Carl) · Depends on: FMX-021
+- Type: story · Size: M · Status: done 2026-11-17 · Raised: 2026-11-17 (Carl) · Depends on: FMX-021
+
+**Done notes:** `/defects` has new Group by chips (None · Severity · Trade · Property · Month logged) and Sort by chips (Date newest · Date oldest · Severity critical first · Last updated · Defect number). URL-persisted via `?group=…&sort=…` so views are bookmarkable; defaults omitted. Fetch pulls `trade` + `updated_at` as well. When group=none the existing flat list/table renders unchanged (desktop table, mobile cards from FMX-032). When grouped, rows render under a card per group with the group name + count header, list-cards inside — trade shows inline per row so it's visible from any grouping. Group orders: severity critical→minor, month newest first, untagged trade sinks to bottom. Sort applies within every group. "Clear filters" now resets group + sort too. localStorage per-browser memory of last choice deferred — not critical and URL bookmarks cover most cases.
 
 **As** an FM
 **I want** to group or sort the defects list by severity, trade, or date logged (and property / status, which already filter)

@@ -9,11 +9,21 @@ export const fetchCache = 'force-no-store';
 
 type StatusFilter = 'open' | 'resolved' | 'all';
 type SeverityFilter = 'all' | 'critical' | 'major' | 'moderate' | 'minor';
+type GroupBy = 'none' | 'severity' | 'trade' | 'property' | 'month';
+type SortBy = 'date_desc' | 'date_asc' | 'severity' | 'updated' | 'number';
 
 const STATUS_LABEL: Record<StatusFilter, string> = { open: 'Open', resolved: 'Resolved', all: 'All' };
 const SEVERITY_LABEL: Record<SeverityFilter, string> = {
   all: 'All', critical: 'Critical', major: 'Major', moderate: 'Moderate', minor: 'Minor',
 };
+const GROUP_LABEL: Record<GroupBy, string> = {
+  none: 'None', severity: 'Severity', trade: 'Trade', property: 'Property', month: 'Month logged',
+};
+const SORT_LABEL: Record<SortBy, string> = {
+  date_desc: 'Date logged (newest)', date_asc: 'Date logged (oldest)',
+  severity: 'Severity (critical first)', updated: 'Last updated', number: 'Defect number',
+};
+const SEVERITY_ORDER: Record<string, number> = { critical: 0, major: 1, moderate: 2, minor: 3 };
 
 function parseStatus(raw?: string): StatusFilter {
   const v = (raw || '').toLowerCase();
@@ -31,14 +41,29 @@ function parseProperty(raw?: string, valid: string[] = []): string {
   if (valid.includes(v)) return v;
   return 'ALL';
 }
+function parseGroup(raw?: string): GroupBy {
+  const v = (raw || '').toLowerCase();
+  if (['severity', 'trade', 'property', 'month'].includes(v)) return v as GroupBy;
+  return 'none';
+}
+function parseSort(raw?: string): SortBy {
+  const v = (raw || '').toLowerCase();
+  if (['date_asc', 'severity', 'updated', 'number'].includes(v)) return v as SortBy;
+  return 'date_desc';
+}
 
-// Build a URL string for /defects with the given filter set, preserving defaults
-function buildHref(f: { status: StatusFilter; property: string; severity: SeverityFilter; client: string }): string {
+type Filters = {
+  status: StatusFilter; property: string; severity: SeverityFilter; client: string;
+  group: GroupBy; sort: SortBy;
+};
+function buildHref(f: Filters): string {
   const params = new URLSearchParams();
   if (f.client !== 'ALL') params.set('client', f.client);
   if (f.status !== 'open') params.set('status', f.status);
   if (f.property !== 'ALL') params.set('property', f.property);
   if (f.severity !== 'all') params.set('severity', f.severity);
+  if (f.group !== 'none') params.set('group', f.group);
+  if (f.sort !== 'date_desc') params.set('sort', f.sort);
   const qs = params.toString();
   return qs ? `/defects?${qs}` : '/defects';
 }
@@ -46,7 +71,7 @@ function buildHref(f: { status: StatusFilter; property: string; severity: Severi
 export default async function DefectsList({
   searchParams,
 }: {
-  searchParams: { status?: string; property?: string; severity?: string; client?: string };
+  searchParams: { status?: string; property?: string; severity?: string; client?: string; group?: string; sort?: string };
 }) {
   noStore();   // hard opt-out of Data Cache for every request
 
@@ -81,13 +106,15 @@ export default async function DefectsList({
   const status = parseStatus(searchParams.status);
   const severity = parseSeverity(searchParams.severity);
   const property = parseProperty(searchParams.property, propertyCodes);
+  const group = parseGroup(searchParams.group);
+  const sort = parseSort(searchParams.sort);
 
   // Build the defect query with all four filters.
   // Drafts are hidden here — they live at /email-inbox until Carl promotes them.
   let query = supabaseServer
     .from('defects')
     .select(`
-      defect_number, title, severity, status, identified_at, resolved_at,
+      defect_number, title, severity, status, identified_at, resolved_at, updated_at, trade,
       property:property_id ( short_code, name, client:client_id ( short_code ) )
     `)
     .neq('status', 'draft')
@@ -161,7 +188,44 @@ export default async function DefectsList({
     }).length;
   }
 
-  const hasActiveFilters = clientFilter !== 'ALL' || status !== 'open' || property !== 'ALL' || severity !== 'all';
+  const hasActiveFilters = clientFilter !== 'ALL' || status !== 'open' || property !== 'ALL' || severity !== 'all' || group !== 'none' || sort !== 'date_desc';
+
+  // --- Sort the displayed defects per the `sort` selector ------------------
+  const sortedDisplayed = displayed.slice().sort((a: any, b: any) => {
+    if (sort === 'severity') {
+      const sa = SEVERITY_ORDER[a.severity] ?? 9;
+      const sb = SEVERITY_ORDER[b.severity] ?? 9;
+      if (sa !== sb) return sa - sb;
+      return (b.identified_at || '').localeCompare(a.identified_at || '');
+    }
+    if (sort === 'date_asc') return (a.identified_at || '').localeCompare(b.identified_at || '');
+    if (sort === 'updated')  return (b.updated_at || b.identified_at || '').localeCompare(a.updated_at || a.identified_at || '');
+    if (sort === 'number')   return a.defect_number.localeCompare(b.defect_number);
+    return (b.identified_at || '').localeCompare(a.identified_at || '');   // date_desc default
+  });
+
+  // --- Group the sorted defects per the `group` selector -------------------
+  function groupKey(d: any): string {
+    if (group === 'severity') return (d.severity || '—').toUpperCase();
+    if (group === 'trade')    return d.trade || '— Untagged';
+    if (group === 'property') return d.property?.short_code || '—';
+    if (group === 'month')    return (d.identified_at || '').slice(0, 7) || '—';
+    return '';
+  }
+  const grouped = new Map<string, any[]>();
+  for (const d of sortedDisplayed) {
+    const k = groupKey(d);
+    if (!grouped.has(k)) grouped.set(k, []);
+    grouped.get(k)!.push(d);
+  }
+  // Order groups sensibly
+  const groupOrder = Array.from(grouped.keys()).sort((a, b) => {
+    if (group === 'severity') return (SEVERITY_ORDER[a.toLowerCase()] ?? 9) - (SEVERITY_ORDER[b.toLowerCase()] ?? 9);
+    if (group === 'month')    return b.localeCompare(a);   // newest month first
+    if (a === '— Untagged') return 1;
+    if (b === '— Untagged') return -1;
+    return a.localeCompare(b);
+  });
 
   return (
     <div>
@@ -182,14 +246,14 @@ export default async function DefectsList({
       {(clients || []).length > 1 && (
         <FilterRow label="Client">
           <Chip
-            href={buildHref({ status, property: 'ALL', severity, client: 'ALL' })}
+            href={buildHref({ status, property: 'ALL', severity, client: 'ALL', group, sort })}
             active={clientFilter === 'ALL'}
             label={`All (${countBy('client', 'ALL')})`}
           />
           {(clients || []).map(c => (
             <Chip
               key={c.short_code}
-              href={buildHref({ status, property: 'ALL', severity, client: c.short_code })}
+              href={buildHref({ status, property: 'ALL', severity, client: c.short_code, group, sort })}
               active={clientFilter === c.short_code}
               label={`${c.short_code} (${countBy('client', c.short_code)})`}
             />
@@ -202,7 +266,7 @@ export default async function DefectsList({
         {(['open', 'resolved', 'all'] as StatusFilter[]).map(f => (
           <Chip
             key={f}
-            href={buildHref({ status: f, property, severity, client: clientFilter })}
+            href={buildHref({ status: f, property, severity, client: clientFilter, group, sort })}
             active={status === f}
             label={`${STATUS_LABEL[f]} (${countBy('status', f)})`}
           />
@@ -212,14 +276,14 @@ export default async function DefectsList({
       {/* --- Property filter --- */}
       <FilterRow label="Property">
         <Chip
-          href={buildHref({ status, property: 'ALL', severity, client: clientFilter })}
+          href={buildHref({ status, property: 'ALL', severity, client: clientFilter, group, sort })}
           active={property === 'ALL'}
           label={`All (${countBy('property', 'ALL')})`}
         />
         {(properties || []).map(p => (
           <Chip
             key={p.short_code}
-            href={buildHref({ status, property: p.short_code, severity, client: clientFilter })}
+            href={buildHref({ status, property: p.short_code, severity, client: clientFilter, group, sort })}
             active={property === p.short_code}
             label={`${p.short_code} (${countBy('property', p.short_code)})`}
           />
@@ -231,24 +295,46 @@ export default async function DefectsList({
         {(['all', 'critical', 'major', 'moderate', 'minor'] as SeverityFilter[]).map(f => (
           <Chip
             key={f}
-            href={buildHref({ status, property, severity: f, client: clientFilter })}
+            href={buildHref({ status, property, severity: f, client: clientFilter, group, sort })}
             active={severity === f}
             label={`${SEVERITY_LABEL[f]} (${countBy('severity', f)})`}
           />
         ))}
       </FilterRow>
 
+      {/* --- Group-by + Sort-by selectors --- */}
+      <FilterRow label="Group by">
+        {(['none', 'severity', 'trade', 'property', 'month'] as GroupBy[]).map(g => (
+          <Chip
+            key={g}
+            href={buildHref({ status, property, severity, client: clientFilter, group: g, sort })}
+            active={group === g}
+            label={GROUP_LABEL[g]}
+          />
+        ))}
+      </FilterRow>
+      <FilterRow label="Sort by">
+        {(['date_desc', 'date_asc', 'severity', 'updated', 'number'] as SortBy[]).map(s => (
+          <Chip
+            key={s}
+            href={buildHref({ status, property, severity, client: clientFilter, group, sort: s })}
+            active={sort === s}
+            label={SORT_LABEL[s]}
+          />
+        ))}
+      </FilterRow>
+
       <div className="mb-2" />
 
-      {displayed.length === 0 ? (
+      {sortedDisplayed.length === 0 ? (
         <div className="rounded-lg border bg-white p-6 text-sm text-muted text-center">
           No defects match the current filter combination.
         </div>
-      ) : (
+      ) : group === 'none' ? (
         <div className="rounded-lg border bg-white overflow-hidden">
           {/* Mobile: list-cards (one per defect). Desktop: full table. */}
           <ul className="md:hidden divide-y">
-            {displayed.map((d: any) => {
+            {sortedDisplayed.map((d: any) => {
               const isOpenState = d.status === 'open' || d.status === 'work_ordered';
               const highlightHref = `/defects/${encodeURIComponent(d.defect_number)}?highlight=1`;
               return (
@@ -293,7 +379,7 @@ export default async function DefectsList({
               </tr>
             </thead>
             <tbody>
-              {displayed.map((d: any) => {
+              {sortedDisplayed.map((d: any) => {
                 const isOpenState = d.status === 'open' || d.status === 'work_ordered';
                 const highlightHref = `/defects/${encodeURIComponent(d.defect_number)}?highlight=1`;
                 return (
@@ -344,6 +430,51 @@ export default async function DefectsList({
               })}
             </tbody>
           </table>
+        </div>
+      ) : (
+        /* Grouped view — a card per group, list-cards inside each. */
+        <div className="space-y-3">
+          {groupOrder.map(k => {
+            const rows = grouped.get(k) || [];
+            return (
+              <div key={k} className="rounded-lg border bg-white overflow-hidden">
+                <div className="flex items-baseline justify-between px-4 py-2 border-b bg-gray-50">
+                  <h2 className="text-sm font-bold text-navy">{k}</h2>
+                  <span className="text-xs text-muted">{rows.length} defect{rows.length === 1 ? '' : 's'}</span>
+                </div>
+                <ul className="divide-y">
+                  {rows.map((d: any) => {
+                    const isOpenState = d.status === 'open' || d.status === 'work_ordered';
+                    const highlightHref = `/defects/${encodeURIComponent(d.defect_number)}?highlight=1`;
+                    return (
+                      <li key={d.defect_number} className="relative">
+                        <Link href={highlightHref} className="block px-4 py-3 hover:bg-blue-50/40 min-h-[44px]">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-xs text-navy">{d.defect_number}</span>
+                            <Badge tone={severityTone(d.severity)}>{(d.severity || '').toUpperCase()}</Badge>
+                            {d.property && <span className="text-xs text-muted">{d.property.short_code}</span>}
+                            {d.trade && <span className="text-xs text-muted">· {d.trade}</span>}
+                            <span className="ml-auto text-[11px] text-muted whitespace-nowrap">
+                              {(d.status || '').replace('_', ' ')} · {(d.identified_at || '').slice(0, 10)}
+                            </span>
+                          </div>
+                          <div className="text-sm text-navy mt-1">{d.title}</div>
+                        </Link>
+                        {canDispatch && isOpenState && (
+                          <Link
+                            href={`/dispatch/${encodeURIComponent(d.defect_number)}${keyParam}`}
+                            className="absolute right-3 bottom-3 text-xs px-2.5 py-1 rounded-md bg-green-700 text-white hover:bg-green-800"
+                          >
+                            Raise WO
+                          </Link>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
