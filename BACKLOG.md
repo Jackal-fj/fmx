@@ -244,6 +244,54 @@ One line per story. INVEST form — Independent, Negotiable, Valuable, Estimable
 
 ---
 
+### [FMX-027] Nav polish — one-click back button + consolidated "+ Add" menu
+
+- Type: story · Size: S · Status: done 2026-11-17 · Raised: 2026-11-17 (Carl)
+
+**Done notes:** Back chevron added at the far left of the nav on every page except Dashboard. Uses `router.back()` with a client-side `window.history.length` check — when there's no history (fresh deep-link load or share URL), falls back to an inferred parent per the routing rules in the AC (agreement → client hub, `/clients/[code]/*` → client hub, `/properties/[code]/*` → property hub, `/defects/[number]` → `/defects`, etc.). 44pt touch target, focus ring, aria-label "Back".
+
+Right side: replaced `[Update] [+ Log defect] [More ▾]` with a single `+ Add ▾` dropdown, grouped **Defect** (Log · Update) / **Register** (Asset · Vendor) / **Service** (Log event) / **Client** (New client). Each item carries a one-line hint. Mobile hamburger pins the Add groups to the top of the drawer so one-handed use works.
+
+Cleanup deferred to a follow-up: in-page quick-action rows on `/clients/[code]` and `/properties/[code]` still carry their `+ Log defect` / `+ Job` / `+ Contact` buttons. That's a separate pass — raised as FMX-028. Breadcrumb links (`← Kinetic Growth Fund`, `← Back to defect`) stay for now too; they're redundant with the global back button but not harmful. FMX-029 for the breadcrumb cleanup. The `+ New property` and `+ New agreement` entries proposed in the original AC are also left for FMX-028 since those routes don't exist yet as standalone forms.
+
+**As** an FM moving between pages all day
+**I want** a single-click back button in the top nav that returns me to where I came from (client hub, defects list, wherever) without having to renavigate from the top-level menu, and every "add / create" action collected into one dedicated place instead of scattered across the top bar and the inside of pages
+**So that** navigation is one-handed on mobile, I don't lose my place drilling into detail, and I'm not scanning the top bar to work out which button creates what
+
+**Acceptance criteria — Back button**
+
+- A back chevron appears at the far left of the nav (before FMX wordmark) on every page except the dashboard, always in the same position so muscle memory works across pages
+- Primary behaviour: `router.back()` — one tap returns the user to where they came from (client hub → agreement → tap back → client hub; defects list → defect detail → tap back → defects list, with filters preserved)
+- Fallback when there is no history (direct deep-link load, new tab, refreshed detail page): a sensible parent inferred from the current route:
+  - `/clients/[code]/agreements/*` → `/clients/[code]`
+  - `/clients/[code]/*` → `/clients/[code]` (if deeper), else `/clients`
+  - `/properties/[code]/*` → `/properties/[code]`, else `/properties`
+  - `/defects/[number]` → `/defects`
+  - `/reports/history` → `/reports`
+  - else → `/` (dashboard)
+- The existing in-page breadcrumb links (`← Kinetic Growth Fund`, `← Back to defect`) are redundant once this lands and can be removed in a cleanup pass
+- Keyboard-accessible, visible focus ring, 44pt touch target on mobile
+
+**Acceptance criteria — Consolidated + Add menu**
+
+- All create / add actions move into one `+ Add ▾` dropdown on the right of the nav, replacing both the inline `+ Log defect` primary button and the `More ▾` dropdown
+- Contents of `+ Add ▾` (grouped):
+  - **Defect** — Log defect · Update defect
+  - **Register** — Add asset · Add vendor · Add contact
+  - **Service** — Log service event
+  - **Client** — New client · New agreement · New property
+- Each item has a one-line hint underneath (same pattern as current More dropdown)
+- Icon is a `+` glyph, label text `Add` — same visual weight as other nav items, not a primary coloured button
+- In-page "quick actions" rows on `/clients/[code]` and `/properties/[short_code]` drop their add buttons (+ Log defect, + Job, + Contact, + Defect) — those moves to the global `+ Add` menu. In-page rows keep only destinations (Defects, Reports, Manage)
+
+**Notes**
+
+- Removes the current `Update` and `+ Log defect` buttons from the right side of the nav; they live under `+ Add` now.
+- Preserves every existing route and server action; this is UI relocation only.
+- Mobile hamburger: `+ Add` becomes a full-width section at the top of the mobile menu.
+
+---
+
 ### [FMX-026] Inline edit mode on the agreement view page
 
 - Type: story · Size: M · Status: next · Raised: 2026-11-17 · Follows: FMX-025
@@ -266,6 +314,31 @@ One line per story. INVEST form — Independent, Negotiable, Valuable, Estimable
 **Notes**
 
 - Interim behaviour (shipped with FMX-025): Edit button routes to `/manage?open=agreements`. Replace that with the inline mode once this story lands.
+
+---
+
+### [FMX-028] Cleanup — drop in-page quick-add buttons now that `+ Add` menu is global
+
+- Type: tech-debt · Size: S · Status: next · Raised: 2026-11-17 · Follows: FMX-027
+
+**AC**
+
+- Remove the `+ Log defect` / `+ Job` / `+ Contact` / `+ Defect` buttons from the Quick Actions row on `/clients/[code]`
+- Remove the same-shape buttons from `/properties/[short_code]`
+- Keep destination links (Defects, Reports, Manage) — only add buttons go
+- Add `+ New property` and `+ New agreement` entries to the global `+ Add` menu once those standalone create forms exist (currently only the manage flow creates them)
+
+---
+
+### [FMX-029] Cleanup — remove per-page breadcrumb links superseded by global back button
+
+- Type: tech-debt · Size: XS · Status: next · Raised: 2026-11-17 · Follows: FMX-027
+
+**AC**
+
+- Remove `← Clients`, `← Kinetic Growth Fund`, `← Back to defect` style breadcrumb links from `/clients/[code]`, `/clients/[code]/agreements/[agreement_code]`, `/defects/[number]`, `/dispatch/[number]`, `/reports/history`
+- Keep the global back button (FMX-027) as the single back affordance
+- Audit every page's header: if there's a `← Something` link that only goes back one level, it goes
 
 ---
 

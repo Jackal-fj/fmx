@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 
 type LeafLink = { href: string; label: string };
 type GroupLink = { label: string; children: LeafLink[] };
@@ -39,38 +39,67 @@ function isLeaf(i: TopItem): i is LeafLink {
   return (i as LeafLink).href !== undefined;
 }
 
+// Deep-link fallback when there is no browser history (e.g. opening a share
+// link, or landing on a detail page in a fresh tab). Maps the current route
+// to its sensible parent so the back button never bounces to the dashboard
+// from a context that has an obvious owner.
+function inferParent(pathname: string): string {
+  // Agreement view → client hub
+  const agrMatch = pathname.match(/^\/clients\/([^/]+)\/agreements\/[^/]+/);
+  if (agrMatch) return `/clients/${agrMatch[1]}`;
+  // Anything deeper under /clients/[code]/* → client hub
+  const clientDeep = pathname.match(/^\/clients\/([^/]+)\/.+/);
+  if (clientDeep) return `/clients/${clientDeep[1]}`;
+  if (pathname.startsWith('/clients/'))    return '/clients';
+  // Property deep links → property hub, else list
+  const propDeep = pathname.match(/^\/properties\/([^/]+)\/.+/);
+  if (propDeep) return `/properties/${propDeep[1]}`;
+  if (pathname.startsWith('/properties/')) return '/properties';
+  // Defects / reports / email inbox detail → their list
+  if (pathname.startsWith('/defects/'))     return '/defects';
+  if (pathname.startsWith('/reports/history')) return '/reports';
+  if (pathname.startsWith('/reports/'))     return '/reports';
+  if (pathname.startsWith('/email-inbox/')) return '/email-inbox';
+  if (pathname.startsWith('/maintenance/')) return '/maintenance';
+  if (pathname.startsWith('/assets/'))      return '/assets';
+  if (pathname.startsWith('/vendors/'))     return '/vendors';
+  // Fallback: dashboard
+  return '/';
+}
+
 export default function Nav({ quickAddKey }: { quickAddKey?: string }) {
   const [openGroup, setOpenGroup] = useState<string | null>(null);
-  const [moreOpen, setMoreOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const groupRef = useRef<HTMLDivElement>(null);
-  const moreRef = useRef<HTMLDivElement>(null);
+  const addRef = useRef<HTMLDivElement>(null);
   const mobileRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
+  const router = useRouter();
 
   // Close everything on route change
   useEffect(() => {
     setOpenGroup(null);
-    setMoreOpen(false);
+    setAddOpen(false);
     setMobileOpen(false);
   }, [pathname]);
 
   // Close on click outside + Escape
   useEffect(() => {
-    if (openGroup === null && !moreOpen && !mobileOpen) return;
+    if (openGroup === null && !addOpen && !mobileOpen) return;
     const handler = (e: MouseEvent) => {
       if (openGroup !== null && groupRef.current && !groupRef.current.contains(e.target as Node)) {
         setOpenGroup(null);
       }
-      if (moreOpen && moreRef.current && !moreRef.current.contains(e.target as Node)) {
-        setMoreOpen(false);
+      if (addOpen && addRef.current && !addRef.current.contains(e.target as Node)) {
+        setAddOpen(false);
       }
       if (mobileOpen && mobileRef.current && !mobileRef.current.contains(e.target as Node)) {
         setMobileOpen(false);
       }
     };
     const keyHandler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setOpenGroup(null); setMoreOpen(false); setMobileOpen(false); }
+      if (e.key === 'Escape') { setOpenGroup(null); setAddOpen(false); setMobileOpen(false); }
     };
     document.addEventListener('mousedown', handler);
     document.addEventListener('keydown', keyHandler);
@@ -78,22 +107,39 @@ export default function Nav({ quickAddKey }: { quickAddKey?: string }) {
       document.removeEventListener('mousedown', handler);
       document.removeEventListener('keydown', keyHandler);
     };
-  }, [openGroup, moreOpen, mobileOpen]);
+  }, [openGroup, addOpen, mobileOpen]);
 
   const withKey = (base: string) => quickAddKey ? `${base}?key=${encodeURIComponent(quickAddKey)}` : base;
-  const newDefectHref    = withKey('/new-defect');
-  const updateDefectHref = withKey('/update-defect');
-  const newAssetHref     = withKey('/new-asset');
-  const serviceLogHref   = withKey('/service-log');
-  const newVendorHref    = withKey('/new-vendor');
-  const newClientHref    = withKey('/clients/new');
 
-  const moreActions = [
-    { href: newAssetHref,   label: '+ Add asset',    hint: 'Register new equipment' },
-    { href: serviceLogHref, label: 'Log service',    hint: 'Record a service event' },
-    { href: newVendorHref,  label: '+ Add vendor',   hint: 'Register a contractor' },
-    { href: newClientHref,  label: '+ New client',   hint: 'Set up a client, agreement and sites' },
-  ];
+  // Consolidated Add menu — grouped by domain.
+  const addGroups: { label: string; items: { href: string; label: string; hint: string }[] }[] = quickAddKey ? [
+    {
+      label: 'Defect',
+      items: [
+        { href: withKey('/new-defect'),    label: 'Log defect',    hint: 'Raise a new defect' },
+        { href: withKey('/update-defect'), label: 'Update defect', hint: 'Edit or close an existing defect' },
+      ],
+    },
+    {
+      label: 'Register',
+      items: [
+        { href: withKey('/new-asset'),  label: 'Add asset',   hint: 'Register new equipment' },
+        { href: withKey('/new-vendor'), label: 'Add vendor',  hint: 'Register a contractor' },
+      ],
+    },
+    {
+      label: 'Service',
+      items: [
+        { href: withKey('/service-log'), label: 'Log service event', hint: 'Record a service event' },
+      ],
+    },
+    {
+      label: 'Client',
+      items: [
+        { href: withKey('/clients/new'),  label: 'New client',   hint: 'Set up a client, agreement and sites' },
+      ],
+    },
+  ] : [];
 
   function isActive(href: string) {
     if (href === '/') return pathname === '/';
@@ -112,21 +158,44 @@ export default function Nav({ quickAddKey }: { quickAddKey?: string }) {
     </svg>
   );
 
+  // Back button — one click to previous page; falls back to inferred parent on
+  // deep-link loads where browser history is empty.
+  function handleBack() {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push(inferParent(pathname));
+    }
+  }
+  const showBack = pathname !== '/';
+
   return (
     <nav className="border-b bg-white fixed top-0 left-0 right-0 z-50 shadow-sm">
       <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
 
-        {/* -------- Left: brand + mobile menu toggle -------- */}
-        <div ref={mobileRef} className="relative flex items-center gap-2">
-          <Link href="/" className="font-bold text-navy text-lg whitespace-nowrap hover:text-blue-900">
+        {/* -------- Left: back + brand + mobile menu -------- */}
+        <div ref={mobileRef} className="relative flex items-center gap-1 min-w-0">
+          {showBack && (
+            <button
+              type="button"
+              onClick={handleBack}
+              aria-label="Back"
+              className="rounded p-1.5 text-muted hover:text-navy hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-navy/30 min-w-[44px] min-h-[44px] flex items-center justify-center"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none" aria-hidden>
+                <path d="M12.5 5l-5 5 5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          )}
+          <Link href="/" className="font-bold text-navy text-lg whitespace-nowrap hover:text-blue-900 px-1">
             FMX
           </Link>
-          {/* Mobile hamburger (below md) */}
           <button
             type="button"
             onClick={() => setMobileOpen(o => !o)}
             aria-expanded={mobileOpen}
             aria-haspopup="true"
+            aria-label="Menu"
             className="md:hidden rounded p-1 text-muted hover:text-navy focus:outline-none focus:ring-2 focus:ring-navy/30"
           >
             <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none" aria-hidden>
@@ -135,7 +204,23 @@ export default function Nav({ quickAddKey }: { quickAddKey?: string }) {
           </button>
 
           {mobileOpen && (
-            <div className="md:hidden absolute left-0 top-full mt-2 rounded-md border bg-white shadow-lg min-w-[240px] overflow-hidden">
+            <div className="md:hidden absolute left-0 top-full mt-2 rounded-md border bg-white shadow-lg min-w-[260px] max-h-[80vh] overflow-y-auto">
+              {/* Add actions pinned to the top on mobile */}
+              {addGroups.length > 0 && (
+                <div className="border-b bg-blue-50/50">
+                  <div className="px-4 pt-2 pb-1 text-[11px] uppercase tracking-wide text-navy font-semibold">+ Add</div>
+                  {addGroups.map(g => (
+                    <div key={g.label}>
+                      <div className="px-4 pt-1 pb-0.5 text-[10px] uppercase tracking-wide text-muted">{g.label}</div>
+                      {g.items.map(it => (
+                        <Link key={it.href} href={it.href} className="block px-4 py-2 text-sm text-navy hover:bg-white">
+                          + {it.label}
+                        </Link>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="px-4 py-2 border-b bg-gray-50">
                 <div className="text-xs font-semibold text-navy uppercase tracking-wide">Navigate</div>
               </div>
@@ -158,9 +243,7 @@ export default function Nav({ quickAddKey }: { quickAddKey?: string }) {
                 }
                 return (
                   <div key={item.label} className="border-b">
-                    <div className="px-4 pt-2 pb-1 text-[11px] uppercase tracking-wide text-muted bg-gray-50">
-                      {item.label}
-                    </div>
+                    <div className="px-4 pt-2 pb-1 text-[11px] uppercase tracking-wide text-muted bg-gray-50">{item.label}</div>
                     {item.children.map(c => {
                       const active = isActive(c.href);
                       return (
@@ -180,9 +263,6 @@ export default function Nav({ quickAddKey }: { quickAddKey?: string }) {
                   </div>
                 );
               })}
-              <div className="px-4 py-2 text-[11px] text-muted bg-gray-50 border-t">
-                Commercial Management Solutions
-              </div>
             </div>
           )}
         </div>
@@ -245,50 +325,46 @@ export default function Nav({ quickAddKey }: { quickAddKey?: string }) {
           })}
         </div>
 
-        {/* -------- Right: Action buttons -------- */}
-        {quickAddKey && (
-          <div className="flex items-center gap-2">
-            <Link
-              href={updateDefectHref}
-              className="rounded-md border border-navy text-navy text-sm font-semibold px-3 py-1.5 hover:bg-navy hover:text-white whitespace-nowrap transition"
+        {/* -------- Right: consolidated Add menu -------- */}
+        {addGroups.length > 0 && (
+          <div ref={addRef} className="relative hidden md:block">
+            <button
+              type="button"
+              onClick={() => setAddOpen(o => !o)}
+              aria-expanded={addOpen}
+              aria-haspopup="true"
+              className={`rounded-md text-sm font-semibold px-3 py-1.5 whitespace-nowrap transition flex items-center gap-1 ${
+                addOpen
+                  ? 'bg-navy text-white'
+                  : 'border border-navy text-navy hover:bg-navy hover:text-white'
+              }`}
             >
-              Update
-            </Link>
-            <Link
-              href={newDefectHref}
-              className="rounded-md bg-navy text-white text-sm font-semibold px-3 py-1.5 hover:bg-blue-900 whitespace-nowrap transition"
-            >
-              + Log defect
-            </Link>
-            <div ref={moreRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setMoreOpen(o => !o)}
-                aria-expanded={moreOpen}
-                aria-haspopup="true"
-                className="rounded-md border border-gray-300 text-muted text-sm font-semibold px-3 py-1.5 hover:border-navy hover:text-navy whitespace-nowrap transition flex items-center gap-1"
-              >
-                More
-                {chev(moreOpen)}
-              </button>
-              {moreOpen && (
-                <div className="absolute right-0 top-full mt-2 rounded-md border bg-white shadow-lg min-w-[220px] overflow-hidden">
-                  <div className="px-4 py-2 border-b bg-gray-50">
-                    <div className="text-xs font-semibold text-navy uppercase tracking-wide">Quick actions</div>
+              + Add
+              <svg className={`w-3 h-3 transition-transform ${addOpen ? 'rotate-180' : ''}`} viewBox="0 0 12 12" fill="none" aria-hidden>
+                <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            {addOpen && (
+              <div className="absolute right-0 top-full mt-2 rounded-md border bg-white shadow-lg min-w-[260px] max-h-[80vh] overflow-y-auto">
+                {addGroups.map((g, gi) => (
+                  <div key={g.label} className={gi > 0 ? 'border-t' : ''}>
+                    <div className="px-4 pt-2 pb-1 text-[11px] uppercase tracking-wide text-muted bg-gray-50">
+                      {g.label}
+                    </div>
+                    {g.items.map(it => (
+                      <Link
+                        key={it.href}
+                        href={it.href}
+                        className="block px-4 py-2 hover:bg-gray-50 transition"
+                      >
+                        <div className="text-sm font-medium text-navy">+ {it.label}</div>
+                        <div className="text-xs text-muted">{it.hint}</div>
+                      </Link>
+                    ))}
                   </div>
-                  {moreActions.map(a => (
-                    <Link
-                      key={a.href}
-                      href={a.href}
-                      className="block px-4 py-2.5 border-b last:border-b-0 hover:bg-gray-50 transition"
-                    >
-                      <div className="text-sm font-medium text-navy">{a.label}</div>
-                      <div className="text-xs text-muted">{a.hint}</div>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
