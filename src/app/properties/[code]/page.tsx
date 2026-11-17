@@ -75,12 +75,12 @@ export default async function PropertyDetail({ params }: { params: { code: strin
         <h2 className="text-lg font-bold text-navy mb-3">Facility Condition Assessment</h2>
         {latestFca ? (
           <div className="rounded-lg border bg-white overflow-hidden">
-            <div className="p-5 border-b flex items-center gap-6">
-              <div>
+            <div className="p-4 border-b grid grid-cols-3 gap-4">
+              <div className="col-span-3 sm:col-span-1">
                 <div className="text-xs uppercase tracking-wide text-muted">Overall</div>
                 <div className="flex items-center gap-3 mt-1">
                   <Badge tone={ratingTone(latestFca.overall_rating)}>{(latestFca.overall_rating || '—').toUpperCase()}</Badge>
-                  <span className="text-3xl font-bold">{latestFca.numeric_score == null ? '—' : Number(latestFca.numeric_score).toFixed(2)}</span>
+                  <span className="text-2xl sm:text-3xl font-bold">{latestFca.numeric_score == null ? '—' : Number(latestFca.numeric_score).toFixed(2)}</span>
                 </div>
               </div>
               <div>
@@ -93,30 +93,21 @@ export default async function PropertyDetail({ params }: { params: { code: strin
               </div>
             </div>
             {components.length > 0 && (
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 text-muted">
-                  <tr>
-                    <th className="text-left p-3">Component</th>
-                    <th className="text-left p-3">Rating</th>
-                    <th className="text-right p-3">Score</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {components.map(([key, sect]) => {
-                    const score = sect.average ?? sect.avg_score;
-                    return (
-                      <tr key={key} className="border-t">
-                        <td className="p-3 font-medium capitalize">{key.replaceAll('_', ' ')}</td>
-                        <td className="p-3"><Badge tone={ratingTone(sect.label)}>{(sect.label || '—').toUpperCase()}</Badge></td>
-                        <td className="p-3 text-right font-mono">{score == null ? '—' : Number(score).toFixed(2)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <ul className="divide-y">
+                {components.map(([key, sect]) => {
+                  const score = sect.average ?? sect.avg_score;
+                  return (
+                    <li key={key} className="p-3 flex items-center gap-3">
+                      <span className="flex-1 min-w-0 text-sm font-medium capitalize truncate">{key.replaceAll('_', ' ')}</span>
+                      <Badge tone={ratingTone(sect.label)}>{(sect.label || '—').toUpperCase()}</Badge>
+                      <span className="w-14 text-right font-mono text-sm">{score == null ? '—' : Number(score).toFixed(2)}</span>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
             {latestFca.summary && (
-              <div className="p-5 border-t bg-gray-50 text-sm">
+              <div className="p-4 border-t bg-gray-50 text-sm">
                 <div className="text-xs uppercase tracking-wide text-muted mb-2">Summary</div>
                 <p>{latestFca.summary}</p>
               </div>
@@ -134,26 +125,20 @@ export default async function PropertyDetail({ params }: { params: { code: strin
           <span className="text-sm text-muted">{open.length} open  •  {resolved.length} resolved</span>
         </div>
         <div className="rounded-lg border bg-white overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-muted">
-              <tr>
-                <th className="text-left p-3">Ref</th>
-                <th className="text-left p-3">Severity</th>
-                <th className="text-left p-3">Title</th>
-                <th className="text-left p-3">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(defects || []).slice(0, 50).map((d) => (
-                <tr key={d.defect_number} className="border-t">
-                  <td className="p-3 font-mono text-xs">{d.defect_number}</td>
-                  <td className="p-3"><Badge tone={severityTone(d.severity)}>{(d.severity || '').toUpperCase()}</Badge></td>
-                  <td className="p-3">{d.title}</td>
-                  <td className="p-3 text-muted">{d.status}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ul className="divide-y">
+            {(defects || []).slice(0, 50).map((d) => (
+              <li key={d.defect_number}>
+                <Link href={`/defects/${encodeURIComponent(d.defect_number)}`} className="block px-4 py-3 hover:bg-blue-50/40 min-h-[44px]">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono text-xs text-navy">{d.defect_number}</span>
+                    <Badge tone={severityTone(d.severity)}>{(d.severity || '').toUpperCase()}</Badge>
+                    <span className="ml-auto text-[11px] text-muted">{d.status}</span>
+                  </div>
+                  <div className="text-sm text-navy mt-1">{d.title}</div>
+                </Link>
+              </li>
+            ))}
+          </ul>
           {(defects?.length ?? 0) > 50 && (
             <div className="p-3 text-xs text-muted border-t">
               Showing first 50 of {defects?.length}.
@@ -167,33 +152,21 @@ export default async function PropertyDetail({ params }: { params: { code: strin
         <h2 className="text-lg font-bold text-navy mb-3">Asset register ({assets?.length ?? 0})</h2>
         {(assets?.length ?? 0) > 0 ? (
           <div className="rounded-lg border bg-white overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-muted">
-                <tr>
-                  <th className="text-left p-3">Code</th>
-                  <th className="text-left p-3">Name</th>
-                  <th className="text-left p-3">Make / Model</th>
-                  <th className="text-left p-3">Condition</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(assets || []).slice(0, 30).map(a => (
-                  <tr key={a.asset_code} className="border-t">
-                    <td className="p-3 font-mono text-xs">{a.asset_code}</td>
-                    <td className="p-3">{a.name}</td>
-                    <td className="p-3 text-muted">
-                      {a.make || ''}{a.make && a.model ? ' ' : ''}{a.model || ''}
-                      {!a.make && !a.model ? '—' : ''}
-                    </td>
-                    <td className="p-3">
-                      <Badge tone={ratingTone(a.current_condition)}>
-                        {(a.current_condition || '—').toUpperCase()}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <ul className="divide-y">
+              {(assets || []).slice(0, 30).map(a => {
+                const makeModel = [a.make, a.model].filter(Boolean).join(' ');
+                return (
+                  <li key={a.asset_code} className="p-3 flex items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                      {a.asset_code && <div className="font-mono text-[11px] text-muted">{a.asset_code}</div>}
+                      <div className="text-sm text-navy">{a.name}</div>
+                      {makeModel && <div className="text-xs text-muted truncate">{makeModel}</div>}
+                    </div>
+                    <Badge tone={ratingTone(a.current_condition)}>{(a.current_condition || '—').toUpperCase()}</Badge>
+                  </li>
+                );
+              })}
+            </ul>
             {(assets?.length ?? 0) > 30 && (
               <div className="p-3 text-xs text-muted border-t">
                 Showing first 30 of {assets?.length}.
@@ -210,28 +183,21 @@ export default async function PropertyDetail({ params }: { params: { code: strin
         <h2 className="text-lg font-bold text-navy mb-3">Service contracts</h2>
         {(contracts?.length ?? 0) > 0 ? (
           <div className="rounded-lg border bg-white overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-muted">
-                <tr>
-                  <th className="text-left p-3">Contract</th>
-                  <th className="text-left p-3">Frequency</th>
-                  <th className="text-right p-3">Fee</th>
-                  <th className="text-left p-3">Next service</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(contracts || []).map((c, i) => (
-                  <tr key={i} className="border-t">
-                    <td className="p-3">{c.contract_name}</td>
-                    <td className="p-3 text-muted">{c.frequency || '—'}</td>
-                    <td className="p-3 text-right font-mono">
-                      {c.fee_amount == null ? 'TBC' : `${c.fee_currency} ${Number(c.fee_amount).toFixed(2)}`}
-                    </td>
-                    <td className="p-3 text-muted">{c.next_service_date || 'TBC'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <ul className="divide-y">
+              {(contracts || []).map((c, i) => (
+                <li key={i} className="p-3">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-sm font-medium text-navy">{c.contract_name}</span>
+                    <span className="text-sm font-mono shrink-0">
+                      {c.fee_amount == null ? 'TBC' : `${c.fee_currency} ${Number(c.fee_amount).toFixed(0)}`}
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted mt-0.5">
+                    {[c.frequency || '—', `next ${c.next_service_date || 'TBC'}`].join(' · ')}
+                  </div>
+                </li>
+              ))}
+            </ul>
           </div>
         ) : (
           <p className="text-muted text-sm">No active service contracts.</p>

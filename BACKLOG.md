@@ -507,7 +507,9 @@ Agreement-view-from-deep failure resolved by FMX-031 (search opens any client in
 
 ### [FMX-032] Mobile list-card layout for the Defects list
 
-- Type: tech-debt · Size: S · Status: next · Raised: 2026-11-17 · Follows: FMX-030
+- Type: tech-debt · Size: S · Status: done 2026-11-17 · Raised: 2026-11-17 · Follows: FMX-030
+
+**Done notes:** Below `md:`, `/defects` renders each defect as a stacked list card — ref chip + severity badge + property + status/date on the top line, title on the next line. Resolved rows show resolved-date. "Raise WO" dispatch button floats bottom-right when the defect is open. `md:` and up keeps the full table. Filter chips unchanged.
 
 **AC**
 
@@ -520,7 +522,9 @@ Agreement-view-from-deep failure resolved by FMX-031 (search opens any client in
 
 ### [FMX-033] Mobile list-card layout for Vendors, Assets, Maintenance
 
-- Type: tech-debt · Size: S · Status: next · Raised: 2026-11-17 · Follows: FMX-030
+- Type: tech-debt · Size: S · Status: done 2026-11-17 · Raised: 2026-11-17 · Follows: FMX-030
+
+**Done notes:** Vendors `/vendors` — name + rating + trade/contact + whatsapp/email, stacks cleanly on 375pt, table kept above `md:`. Assets `/assets` — asset code chip + condition badge + property + name + type/make-model, same pattern. Maintenance `/maintenance` — dropped the nested `<table>` entirely (rows were already single-cell dominant) and uses flexbox `<ul>` for both the Assets and Service-contracts blocks so Due chip + Log-service button stay to the right on mobile without clipping.
 
 **AC**
 
@@ -534,7 +538,9 @@ Agreement-view-from-deep failure resolved by FMX-031 (search opens any client in
 
 ### [FMX-034] Dashboard "Recent defects" as list-cards on mobile
 
-- Type: tech-debt · Size: XS · Status: next · Raised: 2026-11-17 · Follows: FMX-030
+- Type: tech-debt · Size: XS · Status: done 2026-11-17 · Raised: 2026-11-17 · Follows: FMX-030
+
+**Done notes:** Dashboard Recent-defects renders as stacked list rows below `md:`, table kept above. Row = defect number chip + severity badge + property + date on the top line, title below. Whole row clickable, preserves FMX-012 behaviour. No horizontal overflow at 375pt.
 
 **AC**
 
@@ -546,7 +552,9 @@ Agreement-view-from-deep failure resolved by FMX-031 (search opens any client in
 
 ### [FMX-035] Mobile layout fix — property page FCA + components
 
-- Type: tech-debt · Size: S · Status: next · Raised: 2026-11-17 · Follows: FMX-030
+- Type: tech-debt · Size: S · Status: done 2026-11-17 · Raised: 2026-11-17 · Follows: FMX-030
+
+**Done notes:** FCA summary strip wraps to 3×1 on mobile and 3×1-horizontal above sm. Components 3-col table → stacked flex row (component name + rating badge + score) that reads at any width. Defects list on property page now mobile list-cards (ref chip + severity + status + title). Assets register on property page: list cards (asset code + name + make-model + condition badge). Service contracts on property page: 1-line title + fee + 1-line sub (frequency, next service). No horizontal overflow at 375pt on any section.
 
 **AC**
 

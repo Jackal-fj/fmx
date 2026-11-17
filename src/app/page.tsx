@@ -153,7 +153,26 @@ export default async function Dashboard() {
             <h2 className="text-sm font-bold text-navy uppercase tracking-wide">Recent defects — last 14 days</h2>
             <Link href="/defects" className="text-xs text-muted hover:text-navy">View all →</Link>
           </div>
-          <table className="w-full text-sm">
+          {/* Mobile: stacked list-cards (one per defect). Desktop: table. */}
+          <ul className="md:hidden divide-y">
+            {recent.map((d: any) => {
+              const href = `/defects/${encodeURIComponent(d.defect_number)}`;
+              return (
+                <li key={d.defect_number}>
+                  <Link href={href} className="block px-4 py-3 hover:bg-blue-50/40 min-h-[44px]">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-xs text-navy">{d.defect_number}</span>
+                      <Badge tone={severityTone(d.severity)}>{(d.severity || '').toUpperCase()}</Badge>
+                      {d.property && <span className="text-xs text-muted">{d.property.short_code}</span>}
+                      <span className="ml-auto text-[11px] text-muted whitespace-nowrap">{(d.identified_at || '').slice(0, 10)}</span>
+                    </div>
+                    <div className="text-sm text-navy mt-1">{d.title}</div>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+          <table className="hidden md:table w-full text-sm">
             <tbody>
               {recent.map((d: any) => {
                 const href = `/defects/${encodeURIComponent(d.defect_number)}`;

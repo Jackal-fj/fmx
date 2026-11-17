@@ -246,7 +246,40 @@ export default async function DefectsList({
         </div>
       ) : (
         <div className="rounded-lg border bg-white overflow-hidden">
-          <table className="w-full text-sm">
+          {/* Mobile: list-cards (one per defect). Desktop: full table. */}
+          <ul className="md:hidden divide-y">
+            {displayed.map((d: any) => {
+              const isOpenState = d.status === 'open' || d.status === 'work_ordered';
+              const highlightHref = `/defects/${encodeURIComponent(d.defect_number)}?highlight=1`;
+              return (
+                <li key={d.defect_number} className="relative">
+                  <Link href={highlightHref} className="block px-4 py-3 hover:bg-blue-50/40 min-h-[44px]">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-xs text-navy">{d.defect_number}</span>
+                      <Badge tone={severityTone(d.severity)}>{(d.severity || '').toUpperCase()}</Badge>
+                      {d.property && <span className="text-xs text-muted">{d.property.short_code}</span>}
+                      <span className="ml-auto text-[11px] text-muted whitespace-nowrap">
+                        {(d.status || '').replace('_', ' ')} · {(d.identified_at || '').slice(0, 10)}
+                      </span>
+                    </div>
+                    <div className="text-sm text-navy mt-1">{d.title}</div>
+                    {status !== 'open' && d.resolved_at && (
+                      <div className="text-[11px] text-muted mt-0.5">Resolved {d.resolved_at.slice(0, 10)}</div>
+                    )}
+                  </Link>
+                  {canDispatch && isOpenState && (
+                    <Link
+                      href={`/dispatch/${encodeURIComponent(d.defect_number)}${keyParam}`}
+                      className="absolute right-3 bottom-3 text-xs px-2.5 py-1 rounded-md bg-green-700 text-white hover:bg-green-800"
+                    >
+                      Raise WO
+                    </Link>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <table className="hidden md:table w-full text-sm">
             <thead className="bg-accent text-navy">
               <tr>
                 <th className="text-left p-3">Ref</th>

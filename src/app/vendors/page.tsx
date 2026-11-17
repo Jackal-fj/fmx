@@ -39,7 +39,29 @@ export default async function VendorsList({
         )}
       </div>
       <div className="rounded-lg border bg-white overflow-hidden">
-        <table className="w-full text-sm">
+        {/* Mobile: list-cards. Desktop: full table. */}
+        <ul className="md:hidden divide-y">
+          {(providers || []).map((p: any) => (
+            <li key={p.id}>
+              <Link href={`/vendors/${p.id}`} className="block px-4 py-3 hover:bg-blue-50/40 min-h-[44px]">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-semibold text-navy">{p.name}</span>
+                  {p.rating && <span className="text-xs text-muted">{p.rating}/5</span>}
+                  {!p.active && <span className="text-[10px] uppercase tracking-wide text-muted border border-gray-300 rounded px-1.5 py-0.5">Inactive</span>}
+                </div>
+                <div className="text-xs text-muted mt-0.5">
+                  {[p.trade, p.contact_name].filter(Boolean).join(' · ') || '—'}
+                </div>
+                {(p.whatsapp_number || p.email) && (
+                  <div className="text-xs text-muted mt-0.5 truncate">
+                    {[p.whatsapp_number, p.email].filter(Boolean).join(' · ')}
+                  </div>
+                )}
+              </Link>
+            </li>
+          ))}
+        </ul>
+        <table className="hidden md:table w-full text-sm">
           <thead className="bg-accent text-navy">
             <tr>
               <th className="text-left p-3">Name</th>

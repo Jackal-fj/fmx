@@ -252,7 +252,30 @@ export default async function AssetsList({
         </div>
       ) : (
         <div className="rounded-lg border bg-white overflow-hidden">
-          <table className="w-full text-sm">
+          {/* Mobile: list-cards. Desktop: full table. */}
+          <ul className="md:hidden divide-y">
+            {displayed.map((a: any) => {
+              const href = `/assets/${a.id}${quickAddEnabled ? `?key=${encodeURIComponent(key)}` : ''}`;
+              const makeModel = [a.make, a.model].filter(Boolean).join(' ');
+              return (
+                <li key={a.id}>
+                  <Link href={href} className="block px-4 py-3 hover:bg-blue-50/40 min-h-[44px]">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {a.asset_code && <span className="font-mono text-xs text-navy">{a.asset_code}</span>}
+                      <Badge tone={ratingTone(a.current_condition)}>{(a.current_condition || '—').toUpperCase()}</Badge>
+                      {a.property && <span className="text-xs text-muted">{a.property.short_code}</span>}
+                      {status !== 'active' && !a.active && <span className="text-[10px] uppercase tracking-wide text-muted border border-gray-300 rounded px-1.5 py-0.5">Retired</span>}
+                    </div>
+                    <div className="text-sm text-navy mt-1">{a.name}</div>
+                    <div className="text-xs text-muted mt-0.5">
+                      {[a.asset_type, makeModel || null].filter(Boolean).join(' · ')}
+                    </div>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+          <table className="hidden md:table w-full text-sm">
             <thead className="bg-accent text-navy">
               <tr>
                 <th className="text-left p-3">Code</th>

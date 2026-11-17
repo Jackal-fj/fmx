@@ -173,37 +173,33 @@ function BucketSection({
           <div className="bg-gray-50 px-3 py-2 text-xs font-semibold text-muted uppercase">
             Assets ({assets.length})
           </div>
-          <table className="w-full text-sm">
-            <tbody>
-              {assets.map(a => (
-                <tr key={a.id} className="border-t hover:bg-gray-50">
-                  <td className="p-3 min-w-0">
-                    <div className="flex items-baseline gap-2 mb-1">
-                      <Link href={`/assets/${a.id}`} className="text-sm font-medium text-navy hover:underline">{a.name}</Link>
-                      <span className="text-[11px] text-muted">{a.asset_type}</span>
-                    </div>
-                    <div className="text-[11px] text-muted">
-                      {a.property?.short_code || '—'}
-                      {a.asset_code && <span> · {a.asset_code}</span>}
-                      {a.service_interval_months && <span> · {a.service_interval_months} mo interval</span>}
-                      {a.last_serviced_at && <span> · last {a.last_serviced_at.slice(0, 10)}</span>}
-                    </div>
-                  </td>
-                  <td className="p-3 whitespace-nowrap text-right">
-                    <DueChip days={a._days} bucket={bucket} />
-                  </td>
-                  <td className="p-3 whitespace-nowrap text-right">
-                    {quickAddEnabled ? (
-                      <Link
-                        href={`/service-log/${a.id}?key=${encodeURIComponent(secretKey)}`}
-                        className="text-xs px-2 py-1 rounded border border-navy text-navy hover:bg-navy hover:text-white"
-                      >Log service</Link>
-                    ) : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ul className="divide-y">
+            {assets.map(a => (
+              <li key={a.id} className="p-3 flex flex-wrap items-start gap-2 hover:bg-gray-50">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <Link href={`/assets/${a.id}`} className="text-sm font-medium text-navy hover:underline">{a.name}</Link>
+                    <span className="text-[11px] text-muted">{a.asset_type}</span>
+                  </div>
+                  <div className="text-[11px] text-muted mt-0.5">
+                    {a.property?.short_code || '—'}
+                    {a.asset_code && <span> · {a.asset_code}</span>}
+                    {a.service_interval_months && <span> · {a.service_interval_months} mo interval</span>}
+                    {a.last_serviced_at && <span> · last {a.last_serviced_at.slice(0, 10)}</span>}
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <DueChip days={a._days} bucket={bucket} />
+                </div>
+                {quickAddEnabled && (
+                  <Link
+                    href={`/service-log/${a.id}?key=${encodeURIComponent(secretKey)}`}
+                    className="shrink-0 text-xs px-2 py-1 rounded border border-navy text-navy hover:bg-navy hover:text-white"
+                  >Log service</Link>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -213,28 +209,25 @@ function BucketSection({
           <div className="bg-gray-50 px-3 py-2 text-xs font-semibold text-muted uppercase">
             Service contracts ({contracts.length})
           </div>
-          <table className="w-full text-sm">
-            <tbody>
-              {contracts.map(c => (
-                <tr key={c.id} className="border-t hover:bg-gray-50">
-                  <td className="p-3 min-w-0">
-                    <div className="text-sm font-medium text-navy">{c.contract_name}</div>
-                    <div className="text-[11px] text-muted">
-                      {c.property?.short_code || 'Portfolio'}
-                      {c.discipline && <span> · {c.discipline}</span>}
-                      {c.frequency && <span> · {c.frequency}</span>}
-                      {c.provider?.name && <span> · {c.provider.name}</span>}
-                      {c.fee_amount && <span> · {c.fee_currency || 'FJD'} {Number(c.fee_amount).toFixed(0)}</span>}
-                    </div>
-                  </td>
-                  <td className="p-3 whitespace-nowrap text-right">
-                    <DueChip days={c._days} bucket={bucket} />
-                  </td>
-                  <td className="p-3"></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ul className="divide-y">
+            {contracts.map(c => (
+              <li key={c.id} className="p-3 flex flex-wrap items-start gap-2 hover:bg-gray-50">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-navy">{c.contract_name}</div>
+                  <div className="text-[11px] text-muted mt-0.5">
+                    {c.property?.short_code || 'Portfolio'}
+                    {c.discipline && <span> · {c.discipline}</span>}
+                    {c.frequency && <span> · {c.frequency}</span>}
+                    {c.provider?.name && <span> · {c.provider.name}</span>}
+                    {c.fee_amount && <span> · {c.fee_currency || 'FJD'} {Number(c.fee_amount).toFixed(0)}</span>}
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <DueChip days={c._days} bucket={bucket} />
+                </div>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </section>
