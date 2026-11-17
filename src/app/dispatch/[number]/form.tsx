@@ -11,6 +11,7 @@ type DefectInfo = {
   severity: string;
   status: string;
   identified_at: string | null;
+  trade: string | null;
   property_short_code: string;
   property_name: string;
   space_name: string | null;
@@ -83,11 +84,28 @@ export default function DispatchForm({
   const [message, setMessage] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  // When the defect carries a trade, default-filter the vendor list to the
+  // matching trade. The FM can tap "Show all" to override.
+  const [showAllVendors, setShowAllVendors] = useState(!defect.trade);
 
   const selectedProvider = useMemo(
     () => providers.find(p => p.id === providerId) || null,
     [providerId, providers],
   );
+
+  const filteredProviders = useMemo(() => {
+    if (showAllVendors || !defect.trade) return providers;
+    const needle = defect.trade.toLowerCase();
+    return providers.filter(p => (p.trade || '').toLowerCase().includes(needle)
+      || needle.includes((p.trade || '').toLowerCase()));
+  }, [providers, defect.trade, showAllVendors]);
+
+  // If the current selection is filtered out, clear it.
+  useEffect(() => {
+    if (providerId && !filteredProviders.some(p => p.id === providerId)) {
+      setProviderId('');
+    }
+  }, [filteredProviders, providerId]);
 
   // Reset the message body when the vendor changes so greeting refreshes.
   useEffect(() => {
@@ -159,9 +177,22 @@ export default function DispatchForm({
 
       {/* Vendor picker */}
       <div>
-        <label className="block text-sm font-semibold text-navy mb-2">
-          Vendor <span className="text-red-600">*</span>
-        </label>
+        <div className="flex items-baseline justify-between mb-2 gap-2 flex-wrap">
+          <label className="text-sm font-semibold text-navy">
+            Vendor <span className="text-red-600">*</span>
+          </label>
+          {defect.trade && !noVendorsWithWA && (
+            <button
+              type="button"
+              onClick={() => setShowAllVendors(s => !s)}
+              className="text-xs text-navy hover:underline"
+            >
+              {showAllVendors
+                ? `Filter to ${defect.trade} vendors`
+                : `Show all vendors`}
+            </button>
+          )}
+        </div>
         {noVendorsWithWA ? (
           <div className="rounded-md border border-orange-300 bg-orange-50 p-3 text-sm text-orange-800">
             No vendors with WhatsApp numbers on file. Add or edit a vendor first (Vendors page).
@@ -175,14 +206,16 @@ export default function DispatchForm({
               className="w-full rounded-md border bg-white p-3 text-base"
             >
               <option value="">Choose vendor…</option>
-              {providers.map(p => (
+              {filteredProviders.map(p => (
                 <option key={p.id} value={p.id}>
                   {p.name} — {p.trade} ({p.whatsapp_number})
                 </option>
               ))}
             </select>
             <p className="text-xs text-muted mt-1">
-              Only vendors with a WhatsApp number are listed here.
+              {defect.trade && !showAllVendors
+                ? `Filtered to vendors matching "${defect.trade}" (${filteredProviders.length} of ${providers.length}). Only vendors with WhatsApp.`
+                : 'Only vendors with a WhatsApp number are listed here.'}
             </p>
           </>
         )}

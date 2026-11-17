@@ -572,7 +572,44 @@ Agreement-view-from-deep failure resolved by FMX-031 (search opens any client in
 
 ### [FMX-037] Finish `defects.trade` rollout — promote / update / email / dispatch
 
-- Type: tech-debt · Size: S · Status: next · Raised: 2026-11-17 · Follows: FMX-021
+- Type: tech-debt · Size: S · Status: done 2026-11-17 (3 of 5) · Raised: 2026-11-17 · Follows: FMX-021
+
+**Done notes (3 of 5):**
+
+1. **Inline Set-trade on defect detail** — New `TradeEditor` client component + `setDefectTrade` server action. Chip in the badge row reads `+ Set trade` (amber) when NULL, the trade value (muted) when set. Tap to edit inline with a datalist of distinct `providers.trade` values. Fixes the 62 unclassified backfill without having to go through update-defect.
+2. **Required trade on promote-from-draft** — Form field with datalist, required before promotion. Server action validates and persists.
+3. **Dispatch vendor pre-filter by trade** — When defect carries a trade, vendor dropdown default-filters to providers whose `trade` contains the defect's trade (or vice versa — two-way substring match handles "HVAC" vs "HVAC — AC supply + install"). "Show all vendors" toggle in the label row flips to the unfiltered list. Current selection auto-clears when filtered out. Helper text shows "Filtered to vendors matching 'HVAC' (3 of 14)".
+
+**Still open — raised as separate smaller stories:**
+
+- **FMX-038** — Email-ingest classifier: apply the same keyword rules used in FMX-021 backfill to the Postmark inbound action so new drafts arrive pre-tagged. XS.
+- **FMX-039** — Platform-report "Open by trade" and "Completed this month by trade" breakdowns. XS.
+
+---
+
+### [FMX-038] Email-ingest trade classifier
+
+- Type: tech-debt · Size: XS · Status: next · Raised: 2026-11-17 · Follows: FMX-037
+
+**AC**
+
+- Postmark inbound handler (or whichever server action creates the draft defect) runs the same keyword classifier used in the FMX-021 backfill — HVAC, Fire, Plumbing, Electrical, Genset, Garden, Roofing, Waste, Handyman
+- Draft saves with a best-guess `trade` populated; FM confirms / overrides on promote-from-draft (FMX-037)
+- No regression: if the title/description doesn't match any keyword, trade stays NULL and the FM supplies it on promote (FMX-037 makes it required there)
+
+---
+
+### [FMX-039] Platform-report trade breakdowns
+
+- Type: tech-debt · Size: XS · Status: next · Raised: 2026-11-17 · Follows: FMX-037
+
+**AC**
+
+- FM Performance Report adds two breakdown blocks: "Open by trade" (horizontal bar or compact table of trade → count) and "Completed this month by trade"
+- Positioned under the Portfolio snapshot table, before the Monthly spotlight
+- Untagged defects shown as "— Untagged" with the count, so Carl knows what still needs tagging
+
+---
 
 **AC**
 

@@ -21,11 +21,11 @@ export default async function PromoteDraftPage({
   const key = (searchParams.key || '').trim();
   if (!required || key !== required) redirect('/');
 
-  const [{ data: defect }, { data: properties }] = await Promise.all([
+  const [{ data: defect }, { data: properties }, { data: tradeRows }] = await Promise.all([
     supabaseServer
       .from('defects')
       .select(`
-        id, defect_number, title, description, severity, status, photo_urls,
+        id, defect_number, title, description, severity, status, photo_urls, trade,
         property:property_id ( short_code )
       `)
       .eq('defect_number', params.number)
@@ -35,7 +35,13 @@ export default async function PromoteDraftPage({
       .select('short_code, name')
       .eq('active', true)
       .order('short_code'),
+    supabaseServer
+      .from('providers')
+      .select('trade')
+      .eq('active', true)
+      .not('trade', 'is', null),
   ]);
+  const tradeSuggestions = Array.from(new Set((tradeRows || []).map(r => r.trade as string).filter(Boolean))).sort();
 
   if (!defect) {
     return (
@@ -85,6 +91,7 @@ export default async function PromoteDraftPage({
           title: defect.title,
           description: defect.description,
           severity: defect.severity,
+          trade: defect.trade || null,
           photo_count: photoCount,
           source_email: inbox ? {
             from: inbox.from_name ? `${inbox.from_name} <${inbox.from_email}>` : inbox.from_email,
@@ -95,6 +102,7 @@ export default async function PromoteDraftPage({
         properties={properties || []}
         initialProperty={prop?.short_code || ''}
         secretKey={key}
+        tradeSuggestions={tradeSuggestions}
       />
     </div>
   );

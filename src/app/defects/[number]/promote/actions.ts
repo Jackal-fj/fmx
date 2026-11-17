@@ -15,6 +15,7 @@ export async function promoteDraft(formData: FormData): Promise<Result> {
   const title       = (formData.get('title') as string || '').trim();
   const description = (formData.get('description') as string || '').trim();
   const severity    = (formData.get('severity') as string || '').trim();
+  const trade       = (formData.get('trade') as string || '').trim();
   const propertyCd  = (formData.get('property') as string || '').trim();
   const floor       = (formData.get('floor') as string || '').trim();
   const area        = (formData.get('area') as string || '').trim();
@@ -27,6 +28,9 @@ export async function promoteDraft(formData: FormData): Promise<Result> {
   if (!title) return { ok: false, error: 'Title is required.' };
   if (!['critical', 'major', 'moderate', 'minor'].includes(severity)) {
     return { ok: false, error: 'Severity must be critical / major / moderate / minor.' };
+  }
+  if (!trade) {
+    return { ok: false, error: 'Trade is required to promote a draft.' };
   }
 
   // Fetch draft to confirm it's actually a draft (don't promote a non-draft).
@@ -63,6 +67,7 @@ export async function promoteDraft(formData: FormData): Promise<Result> {
     title,
     description: descriptionWithLocation,
     severity,
+    trade,
     status: 'open',
     property_id: propertyId,
     updated_at: new Date().toISOString(),

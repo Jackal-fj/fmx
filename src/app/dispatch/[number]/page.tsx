@@ -24,7 +24,7 @@ export default async function DispatchPage({
     supabaseServer
       .from('defects')
       .select(`
-        id, defect_number, title, description, severity, status, identified_at, photo_urls,
+        id, defect_number, title, description, severity, status, identified_at, photo_urls, trade,
         property:property_id ( short_code, name ),
         space:space_id ( name, space_type )
       `)
@@ -69,6 +69,7 @@ export default async function DispatchPage({
           severity: defect.severity,
           status: defect.status,
           identified_at: defect.identified_at,
+          trade: defect.trade || null,
           property_short_code: property?.short_code || '—',
           property_name: property?.name || '—',
           space_name: space?.name || null,

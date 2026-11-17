@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { unstable_noStore as noStore } from 'next/cache';
 import { supabaseServer } from '@/lib/supabase';
 import Badge, { severityTone } from '@/components/badge';
+import TradeEditor from './trade-editor';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -32,7 +33,7 @@ export default async function DefectDetail({
   const { data: defect } = await supabaseServer
     .from('defects')
     .select(`
-      id, defect_number, title, description, severity, status,
+      id, defect_number, title, description, severity, status, trade,
       identified_at, resolved_at, resolution_notes, photo_urls,
       property:property_id ( short_code, name ),
       space:space_id ( name, short_code )
@@ -55,8 +56,8 @@ export default async function DefectDetail({
   const space = (defect.space as unknown) as { name: string; short_code: string } | null;
   const photos: string[] = Array.isArray(defect.photo_urls) ? defect.photo_urls : [];
 
-  // --- fetch update audit trail + whatsapp thread in parallel --------------
-  const [{ data: updates }, { data: waMessages }] = await Promise.all([
+  // --- fetch update audit trail + whatsapp thread + trade suggestions in parallel
+  const [{ data: updates }, { data: waMessages }, { data: tradeRows }] = await Promise.all([
     supabaseServer
       .from('defect_updates')
       .select(`
@@ -74,7 +75,13 @@ export default async function DefectDetail({
       `)
       .eq('defect_id', defect.id)
       .order('created_at', { ascending: true }),
+    supabaseServer
+      .from('providers')
+      .select('trade')
+      .eq('active', true)
+      .not('trade', 'is', null),
   ]);
+  const tradeSuggestions = Array.from(new Set((tradeRows || []).map(r => r.trade as string).filter(Boolean))).sort();
 
   const dispatchKey = process.env.QUICK_ADD_SECRET || '';
 
@@ -115,7 +122,7 @@ export default async function DefectDetail({
         <span className="font-mono text-xs text-muted whitespace-nowrap">{defect.defect_number}</span>
       </div>
 
-      <div className="flex flex-wrap gap-2 mb-4">
+      <div className="flex flex-wrap gap-2 mb-4 items-center">
         <Badge tone={severityTone(defect.severity)}>{(defect.severity || '').toUpperCase()}</Badge>
         <Badge tone={statusTone(defect.status)}>{statusLabel(defect.status)}</Badge>
         {property && (
@@ -128,6 +135,16 @@ export default async function DefectDetail({
             {space.name}
           </span>
         )}
+        {dispatchKey ? (
+          <TradeEditor
+            defectNumber={defect.defect_number}
+            initial={defect.trade ?? null}
+            secretKey={dispatchKey}
+            suggestions={tradeSuggestions}
+          />
+        ) : defect.trade ? (
+          <span className="text-xs px-2 py-1 rounded-full border bg-white text-muted">{defect.trade}</span>
+        ) : null}
       </div>
 
       {dispatchKey && defect.status !== 'resolved' && (

@@ -31,6 +31,7 @@ type Props = {
     title: string | null;
     description: string | null;
     severity: string | null;
+    trade: string | null;
     photo_count: number;
     source_email: {
       from: string | null;
@@ -41,12 +42,14 @@ type Props = {
   properties: PropertyOption[];
   initialProperty: string;      // best-guess short_code from ingestion
   secretKey: string;
+  tradeSuggestions: string[];
 };
 
-export default function PromoteDraftForm({ defect, properties, initialProperty, secretKey }: Props) {
+export default function PromoteDraftForm({ defect, properties, initialProperty, secretKey, tradeSuggestions }: Props) {
   const [title, setTitle] = useState(defect.title || '');
   const [description, setDescription] = useState(defect.description || '');
   const [severity, setSeverity] = useState(defect.severity || 'moderate');
+  const [trade, setTrade] = useState(defect.trade || '');
   const [property, setProperty] = useState(initialProperty);
   const [floor, setFloor] = useState('');
   const [area, setArea] = useState('');
@@ -63,11 +66,16 @@ export default function PromoteDraftForm({ defect, properties, initialProperty, 
       setErr('Title is required.');
       return;
     }
+    if (!trade.trim()) {
+      setErr('Trade is required before promoting.');
+      return;
+    }
     const fd = new FormData();
     fd.set('defect_id', defect.id);
     fd.set('title', title.trim());
     fd.set('description', description.trim());
     fd.set('severity', severity);
+    fd.set('trade', trade.trim());
     fd.set('property', property);
     fd.set('floor', floor);
     fd.set('area', area);
@@ -163,6 +171,28 @@ export default function PromoteDraftForm({ defect, properties, initialProperty, 
         >
           {SEVERITIES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-navy mb-2">
+          Trade <span className="text-red-600">*</span>
+        </label>
+        <input
+          type="text"
+          list="trade-suggestions-promote"
+          value={trade}
+          onChange={e => setTrade(e.target.value)}
+          required
+          placeholder="Electrical, Plumbing, HVAC…"
+          maxLength={60}
+          className="w-full rounded-md border bg-white p-3 text-base"
+        />
+        <datalist id="trade-suggestions-promote">
+          {tradeSuggestions.map(t => <option key={t} value={t} />)}
+        </datalist>
+        <p className="text-xs text-muted mt-1">
+          Pick from the vendor trade list or type a new one. Required so the defect can be routed to the right vendor.
+        </p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
