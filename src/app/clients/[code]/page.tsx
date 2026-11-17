@@ -5,8 +5,8 @@ import { supabaseServer } from '@/lib/supabase';
 import StatCard from '@/components/stat-card';
 import Badge, { severityTone } from '@/components/badge';
 import {
-  AGREEMENT_STATUSES, AGREEMENT_TYPES, BILLING_CYCLES, CLIENT_TYPES, CONTACT_ROLES, FEE_BASES, WO_STATUSES,
-  OPEN_WO_STATUSES, agreementTone, fmtDate, fmtMoney, labelOf, woTone, withKey,
+  AGREEMENT_TYPES, CLIENT_TYPES, CONTACT_ROLES, FEE_BASES, WO_STATUSES,
+  OPEN_WO_STATUSES, agreementTone, agreementStatusLabel, fmtDate, fmtMoney, labelOf, woTone, withKey,
 } from '@/lib/clients';
 
 export const dynamic = 'force-dynamic';
@@ -184,72 +184,34 @@ export default async function ClientHub({ params }: { params: { code: string } }
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          {/* Agreement */}
-          <Section title="Agreement" action={key ? <Link href={manage('agreements')} className="text-xs text-muted hover:text-navy">{current ? 'Edit' : '+ Add'} →</Link> : null}>
-            {current ? (
-              <div className="p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-xs text-muted">{current.agreement_code}</span>
-                  <Badge tone={agreementTone(current.status)}>{labelOf(AGREEMENT_STATUSES, current.status).toUpperCase()}</Badge>
-                  <span className="text-xs text-muted">{labelOf(AGREEMENT_TYPES, current.agreement_type)}</span>
-                </div>
-                <div className="text-lg font-semibold mt-1">{current.name}</div>
-                <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 mt-3 text-sm">
-                  <DT label="Term" value={
-                    current.start_date || current.end_date
-                      ? `${fmtDate(current.start_date)} to ${fmtDate(current.end_date)}`
-                      : key ? <SetLink href={manage('agreements')} /> : '—'
-                  } />
-                  <DT label="Monthly value" value={
-                    current.monthly_value_estimate != null
-                      ? fmtMoney(current.monthly_value_estimate, current.currency)
-                      : key ? <SetLink href={manage('agreements')} /> : '—'
-                  } />
-                  <DT label="Mgmt fee" value={
-                    current.management_fee_pct != null
-                      ? `${Number(current.management_fee_pct)}%`
-                      : key ? <SetLink href={manage('agreements')} /> : '—'
-                  } />
-                  <DT label="Billing" value={`${labelOf(BILLING_CYCLES, current.billing_cycle)}${current.billing_day ? `, day ${current.billing_day}` : ''}`} />
-                  <DT label="Terms" value={
-                    current.payment_terms_days != null
-                      ? `${current.payment_terms_days} days`
-                      : key ? <SetLink href={manage('agreements')} /> : '—'
-                  } />
-                  <DT label="PO required" value={current.po_required ? 'Yes' : 'No'} />
-                  <DT label="CPI" value={
-                    current.cpi_escalation_pct != null
-                      ? `${Number(current.cpi_escalation_pct)}%`
-                      : key ? <SetLink href={manage('agreements')} /> : '—'
-                  } />
-                  <DT label="Bond" value={
-                    current.bond_amount != null
-                      ? fmtMoney(current.bond_amount, current.currency)
-                      : key ? <SetLink href={manage('agreements')} /> : '—'
-                  } />
-                  <DT label="Float" value={
-                    current.float_amount != null
-                      ? fmtMoney(current.float_amount, current.currency)
-                      : key ? <SetLink href={manage('agreements')} /> : '—'
-                  } />
-                </dl>
-                {current.invoice_requirements ? (
-                  <div className="mt-3 rounded-md bg-accent/50 px-3 py-2 text-sm">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-navy">Invoicing: </span>
-                    {current.invoice_requirements}
-                  </div>
-                ) : key ? (
-                  <div className="mt-3 rounded-md border border-dashed border-gray-300 px-3 py-2 text-sm text-muted">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-navy mr-2">Invoicing: </span>
-                    <Link href={manage('agreements')} className="text-navy hover:underline">Set invoice requirements / PO handling →</Link>
-                  </div>
-                ) : null}
-                {sortedAgreements.length > 1 && (
-                  <div className="mt-3 text-xs text-muted">
-                    Also: {sortedAgreements.slice(1).map(a => `${a.agreement_code} (${labelOf(AGREEMENT_STATUSES, a.status)})`).join(', ')}
-                  </div>
-                )}
-              </div>
+          {/* Agreements — compact status list; whole row opens view-only page */}
+          <Section title={`Agreements (${sortedAgreements.length})`} action={key ? <Link href={manage('agreements')} className="text-xs text-muted hover:text-navy">+ Add →</Link> : null}>
+            {sortedAgreements.length ? (
+              <ul className="divide-y">
+                {sortedAgreements.map((a: any) => {
+                  const fee = feeSummary(a);
+                  return (
+                    <li key={a.id}>
+                      <Link
+                        href={`/clients/${client.short_code}/agreements/${encodeURIComponent(a.agreement_code)}`}
+                        aria-label={`Open agreement ${a.agreement_code}`}
+                        className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50 transition min-h-[44px]"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-xs text-muted">{a.agreement_code}</span>
+                            <Badge tone={agreementTone(a.status)}>{agreementStatusLabel(a.status).toUpperCase()}</Badge>
+                            <span className="text-xs text-muted">{labelOf(AGREEMENT_TYPES, a.agreement_type)}</span>
+                          </div>
+                          <div className="text-sm font-medium text-navy truncate mt-0.5">{a.name}</div>
+                          {fee && <div className="text-xs text-muted mt-0.5">{fee}</div>}
+                        </div>
+                        <span className="shrink-0 text-xs text-muted" aria-hidden>→</span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
             ) : <Empty>No agreement recorded.</Empty>}
           </Section>
 
@@ -461,6 +423,23 @@ function DT({ label, value }: { label: string; value: React.ReactNode }) {
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <div className="p-4 text-sm text-muted">{children}</div>;
+}
+
+// One-line fee summary shown on the collapsed agreement row.
+// e.g. "FJD 1,200/mo + 10% mgmt on CAPEX > FJD 50k"
+function feeSummary(a: any): string | null {
+  const parts: string[] = [];
+  if (a.monthly_value_estimate != null) {
+    const amt = Number(a.monthly_value_estimate).toLocaleString('en-US', { maximumFractionDigits: 0 });
+    parts.push(`${a.currency || 'FJD'} ${amt}/mo`);
+  }
+  if (a.management_fee_pct != null) {
+    parts.push(`${Number(a.management_fee_pct)}% mgmt`);
+  }
+  if (a.payment_terms_days != null) {
+    parts.push(`${a.payment_terms_days}d terms`);
+  }
+  return parts.length ? parts.join(' · ') : null;
 }
 
 // Inline placeholder shown in the Agreement DT grid when a field is empty.

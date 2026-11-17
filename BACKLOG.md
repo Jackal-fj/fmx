@@ -174,21 +174,24 @@ One line per story. INVEST form — Independent, Negotiable, Valuable, Estimable
 
 - **FM team (today).** Full platform. All clients, all properties, write everywhere. Role: `fm_admin`.
 - **Client / landlord (next).** Read-only web view of their portfolio: open defects, resolved YTD, service contracts, reports library, capital works. No ability to log or update. Scoped to `client_id` by a signed link or a lightweight auth. Role: `client_viewer`.
-- **Tenant (later).** No in-app UI for most cases. WhatsApp is the surface — the tenant's existing app, zero onboarding. A property-specific WhatsApp number (or a shared number with a property code the tenant sends first) accepts free text + photos, creates a `draft` defect tagged to that property + tenant, and sends a WhatsApp confirmation with the defect number. Status updates (work ordered, dispatched, resolved) push back as WhatsApp messages. Carl keeps the approval gate on the first few until the intake prompts are proven.
+- **Tenant (later).** No in-app UI for most cases. The surface is a messaging app the tenant already uses — **WhatsApp** for commercial tenants in Fiji, or **Google Chat** where the tenant's organisation already runs on Google Workspace (Ministry tenants, corporate-IT tenants). A property-specific entry point (dedicated WhatsApp number per property, or a Google Chat space per property) accepts free text + photos, creates a `draft` defect tagged to that property + tenant, and replies with the defect number. Status updates (work ordered, dispatched, resolved) push back to the same channel. Carl keeps the approval gate on the first few until the intake prompts are proven.
 
-**Why WhatsApp over a tenant portal**
+**Why messaging over a tenant portal**
 
-- Fiji tenant adoption curve on a new app is slow; everyone has WhatsApp.
+- Fiji tenant adoption curve on a new app is slow; everyone has WhatsApp, and Ministry tenants live in Google Workspace.
 - Zero account management, no password resets, no forgotten URLs.
 - Photo intake is native and compressed sensibly.
-- Already proven inbound path: email-to-FMX works, WhatsApp-to-FMX is the same pattern with a different gateway.
+- Already proven inbound path: email-to-FMX works, WhatsApp-to-FMX and Chat-to-FMX are the same pattern with different gateways.
+- Per-tenant routing: pick the channel the tenant already uses. FHRADC + MWCP are candidates for Google Chat; DPP is a WhatsApp candidate.
 
 **Open questions to resolve before splitting into stories**
 
 - Which clients get a portal first? KGF landlord (Kinetic Growth Fund) is the obvious pilot.
 - Auth for client portal: magic-link email, Supabase Auth, or a per-client signed URL? Preference: magic-link so there's a real user record with an audit trail.
 - WhatsApp gateway: Meta Cloud API (one number, routes by property code the tenant sends on open) vs one WABA number per property (cleaner UX, more admin). Reference: current Postmark pattern handles the email-side analogue.
-- Tenant identification: match by sender WhatsApp number against `tenancies.contact_phone`, with a first-time prompt if unknown.
+- Google Chat gateway: a Chat app (bot) added to a per-property space, with slash commands (`/log`, `/status`, `/photo`) and inline cards for confirmations. Auth via Google Workspace domain; Ministry tenants likely need an IT-sign-off conversation before the bot gets installed.
+- Channel selection per tenant: `tenancies.preferred_channel` (`whatsapp` / `google_chat` / `email`) — one tenant, one channel, chosen on onboarding.
+- Tenant identification: match by sender WhatsApp number against `tenancies.contact_phone`, or by Google Workspace sender email against `tenancies.contact_email`, with a first-time prompt if unknown.
 - What does the tenant see back? Confirmation on log, dispatch notice, resolution notice. Anything else risks being noise.
 - RLS: Supabase row-level security policies for `client_viewer` scoped to client_id, and for any future `tenant_reporter` scoped to property_id.
 
@@ -196,15 +199,73 @@ One line per story. INVEST form — Independent, Negotiable, Valuable, Estimable
 
 1. `client_viewer` role + RLS policies + magic-link login
 2. `/client/[short_code]` read-only landing with portfolio snapshot, open defects, service contracts, reports library
-3. WhatsApp intake gateway (Meta Cloud API webhook → draft defect with photos)
-4. Tenant identification + property routing (number match, fallback prompt)
-5. Outbound status notifications (dispatched, resolved) via WhatsApp template messages
-6. Audit log of every tenant-initiated and client-viewed event
+3. `tenancies.preferred_channel` column + admin UI to set per-tenancy
+4. WhatsApp intake gateway (Meta Cloud API webhook → draft defect with photos)
+5. Google Chat intake gateway (Chat app / bot → draft defect with photos)
+6. Tenant identification + property routing (number / email match, fallback prompt) — shared across both gateways
+7. Outbound status notifications (dispatched, resolved) via WhatsApp template messages and Chat cards, routed by `preferred_channel`
+8. Audit log of every tenant-initiated and client-viewed event
 
 **Notes**
 
 - Reference: existing `/dispatch/[number]` page already uses wa.me click-through for outbound; this epic extends that pattern to inbound and to automated updates.
 - Keep the FM approval gate on anything a tenant initiates until the intake prompts are proven — same posture as the email ingest path today.
+
+---
+
+### [FMX-025] Client hub shows agreements as status only; dedicated view-only agreement page with gated edit
+
+- Type: story · Size: M · Status: done 2026-11-17 · Raised: 2026-11-17 (Carl)
+
+**Done notes:** Client hub `/clients/[code]` agreement block collapsed to a compact clickable row per agreement — `<code>` · status badge · type · name · one-line fee summary · `→` chevron. Whole row is the click target (44pt touch), opens the new view-only page at `/clients/[code]/agreements/[agreement_code]`. New page renders every agreement field as read-only text with linked service lines beneath; Edit button in the header is gated by `canEditAgreement()` which today reads the session key (any session with it = fm_admin). Status labels use the confirmed mapping: Active · Pending · Suspended · Expired · Terminated. Edit button currently routes to the existing `/manage?open=agreements` editor — inline-edit-on-the-same-page is deferred to FMX-026.
+
+**As** an FM looking at a client hub
+**I want** the agreement block on the client page to collapse to one status line per agreement (Active, Pending, Expired, Terminated)
+**So that** the hub is a scannable summary, not a wall of contract detail — and the full agreement lives behind its own link where it can be read without the risk of accidental edits
+
+**Acceptance criteria**
+
+- `/clients/[code]` replaces the inline agreement detail block with a compact list: `<agreement_code> · <name>` · status badge (Active / Pending / Negotiation / Suspended / Expired / Terminated) · one-line fee summary (e.g. "FJD 1,200/mo + 10% mgmt on CAPEX > FJD 50k")
+- The whole agreement row is the click target: clicking the row (anywhere on it) opens `/clients/[code]/agreements/[agreement_code]`. No separate "View →" link cluttering the row — the hover state and cursor make it discoverable
+- Keyboard-accessible: the row is a focusable link with `aria-label="Open agreement <code>"`, Enter/Space navigates
+- New page `/clients/[code]/agreements/[agreement_code]` renders the full agreement as **view-only by default**: all fields rendered as plain text, no form controls visible, no Save button
+- Page has an `Edit` button in the header, shown only to users whose role includes agreement-edit permission (today: `fm_admin`; see FMX-024 for the role model)
+- Clicking `Edit` switches the page into edit mode: fields become editable, Save and Cancel buttons appear, originals restored on Cancel
+- A user without edit permission never sees the Edit button and lands directly on the read-only view
+- The existing `/clients/[code]/manage` flow stays for setup / onboarding, but the day-to-day agreement surface is the new view-only page
+- All checklist items that currently deep-link into `/manage?open=agreements` are retargeted to the new page's Edit mode when the user has permission, and to the read-only view otherwise
+- Mobile: the collapsed status list stacks vertically; the whole row stays clickable with a comfortable touch target (min 44pt); the view-only agreement page prints cleanly on A4 so it can be PDFed if needed
+
+**Notes**
+
+- Pairs naturally with FMX-024 (role model). While FMX-024 is parked, treat every current session as `fm_admin` so the Edit button is visible — behaviour switches to permission-gated as soon as the role column lands.
+- Status label mapping **confirmed 2026-11-17** (Carl): Active=`active` · Pending=`negotiation` | `tender` · Suspended=`suspended` · Expired=`ended` · Terminated=`lost`. Both `negotiation` and `tender` enum values surface as the single "Pending" label.
+- Keeps the audit-ready posture: anyone reading the agreement doesn't risk changing it, and every change still happens through an explicit mode switch.
+
+---
+
+### [FMX-026] Inline edit mode on the agreement view page
+
+- Type: story · Size: M · Status: next · Raised: 2026-11-17 · Follows: FMX-025
+
+**As** an FM with agreement-edit permission
+**I want** the Edit button on `/clients/[code]/agreements/[agreement_code]` to switch the current page into edit mode (inline fields, Save + Cancel)
+**So that** making a change doesn't force me out to the broader `/manage` flow and back
+
+**Acceptance criteria**
+
+- Clicking Edit toggles the page into edit mode via `?edit=1` query param — same URL, back button works
+- Every field on the view becomes an input (date / number / text / enum select) with current value prefilled
+- Save button calls a server action that updates `client_agreements`, revalidates the client hub, and returns to view mode
+- Cancel restores originals and returns to view mode without hitting the DB
+- Validation enforces: start_date < end_date, monthly_value_estimate >= 0, management_fee_pct 0-100, payment_terms_days >= 0
+- Errors render inline against the offending field; no all-or-nothing banners
+- Disabled for users without edit permission (button never renders)
+- Preserves the existing `/manage` flow unchanged
+
+**Notes**
+
+- Interim behaviour (shipped with FMX-025): Edit button routes to `/manage?open=agreements`. Replace that with the inline mode once this story lands.
 
 ---
 

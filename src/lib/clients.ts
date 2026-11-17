@@ -87,6 +87,21 @@ export function agreementTone(status?: string | null): 'good' | 'ok' | 'warn' | 
   }
 }
 
+// Collapsed user-facing status label (confirmed with Carl 2026-11-17):
+//   Active = active · Pending = negotiation | tender · Suspended = suspended ·
+//   Expired = ended · Terminated = lost. Six enum values → five display labels.
+export function agreementStatusLabel(status?: string | null): string {
+  switch (status) {
+    case 'active':      return 'Active';
+    case 'negotiation':
+    case 'tender':      return 'Pending';
+    case 'suspended':   return 'Suspended';
+    case 'ended':       return 'Expired';
+    case 'lost':        return 'Terminated';
+    default:            return '—';
+  }
+}
+
 export function woTone(status?: string | null): 'good' | 'ok' | 'warn' | 'bad' | 'muted' {
   switch (status) {
     case 'closed':
