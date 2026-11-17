@@ -16,6 +16,7 @@ Confirmed with Carl 2026-11-17 and binding on everything that follows.
 2. **Two taps maximum to any navigation destination.** From anywhere in the app, reaching any common *destination* (dashboard, client hub, property hub, defect detail, defects list, generate a report) takes ≤ 2 taps. The nav and the dashboard are the two escape hatches that uphold this rule for navigation. Create actions (log defect, add vendor, etc.) live on the dashboard, not the nav, and are allowed to take an extra tap from deep pages — Carl confirmed 2026-11-17 that a cleaner nav is worth the trade-off because adding is less frequent than navigating. Any navigation flow that requires 3+ taps to reach something routine is a bug and raises a cleanup story.
 3. **Scannable, not dense.** Lists over tables on mobile, one piece of information per line, severity / status conveyed with badges, not sentences.
 4. **No modals for things that can be pages.** Modals are a desktop convention that break mobile — the back button should always work.
+5. **Say as much as we can with as little as possible.** (Carl 2026-11-17.) Prefer glyphs and content to words that only restate the obvious: `+` not `+ Add`, a client name not "Portfolio: Acme", `→` not `View all →`, a magnifier icon not "Search". Headings get removed when the thing itself is the header. Every word on screen earns its place or disappears.
 
 Every story's acceptance criteria assume these principles — they don't need to be restated. A violation of them is a defect, not a trade-off.
 
@@ -25,7 +26,9 @@ Every story's acceptance criteria assume these principles — they don't need to
 
 ### [FMX-013] Attach photos to an email-sourced defect from the defect page
 
-- Type: story · Size: S · Status: next · Raised: 2026-11-17 (Carl)
+- Type: story · Size: S · Status: done 2026-11-17 · Raised: 2026-11-17 (Carl)
+
+**Done notes:** New `PhotoAppender` client component on `/defects/[number]` directly below the gallery. `+ Photo` button uses `<input capture="environment">` so mobile Safari/Chrome opens the rear camera straight away; multi-select works for library picks. Client-side JPEG compression (2000px max, 0.82 quality — same pattern as `/new-defect`) runs before upload. Previews + remove-X before committing. `appendDefectPhotos` server action uploads to the shared `defect-photos` bucket, appends URLs to `defects.photo_urls` (never replaces), reads existing array first for safety. Resolved defects are read-only — appender hidden, action rejects. Works for all active statuses including `draft` so email-ingested defects can gain on-site evidence pre-promotion. `revalidatePath` hits defect detail + list + dashboard so photos appear immediately. Mobile batch cap 10 per upload.
 
 **As** an FM
 **I want** to add one or more photos to a defect after it has landed in FMX from a forwarded tenant email (`fmx@cmsfiji.com`)

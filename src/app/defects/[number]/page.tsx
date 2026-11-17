@@ -3,6 +3,7 @@ import { unstable_noStore as noStore } from 'next/cache';
 import { supabaseServer } from '@/lib/supabase';
 import Badge, { severityTone } from '@/components/badge';
 import TradeEditor from './trade-editor';
+import PhotoAppender from '@/components/photo-appender';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -189,23 +190,33 @@ export default async function DefectDetail({
         </div>
       )}
 
-      {/* ---------- all photos (aggregated) ---------- */}
-      {photos.length > 0 && (
+      {/* ---------- photos — gallery + inline appender (FMX-013) ---------- */}
+      {(photos.length > 0 || (dispatchKey && defect.status !== 'resolved')) && (
         <div className="mb-6">
           <h2 className="text-sm font-bold text-navy uppercase tracking-wide mb-2">
-            Photos ({photos.length})
+            Photos{photos.length > 0 ? ` (${photos.length})` : ''}
           </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {photos.map((url, i) => (
-              <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block">
-                <img
-                  src={url}
-                  alt={`evidence ${i + 1}`}
-                  className="w-full h-32 object-cover rounded border hover:opacity-90"
-                />
-              </a>
-            ))}
-          </div>
+          {photos.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
+              {photos.map((url, i) => (
+                <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block">
+                  <img
+                    src={url}
+                    alt={`evidence ${i + 1}`}
+                    className="w-full h-32 object-cover rounded border hover:opacity-90"
+                  />
+                </a>
+              ))}
+            </div>
+          )}
+          {dispatchKey && defect.status !== 'resolved' && (
+            <PhotoAppender
+              defectId={defect.id}
+              defectNumber={defect.defect_number}
+              secretKey={dispatchKey}
+              existingCount={photos.length}
+            />
+          )}
         </div>
       )}
 

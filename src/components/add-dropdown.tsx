@@ -35,20 +35,13 @@ export default function AddDropdown({ items }: { items: AddItem[] }) {
         type="button"
         aria-expanded={open}
         aria-haspopup="true"
-        aria-label="Add new record"
+        aria-label="New record"
         onClick={() => setOpen(o => !o)}
-        className={`flex items-center justify-center gap-2 bg-white px-5 py-3 min-h-[60px] min-w-[120px] rounded-lg border-2 transition ${
+        className={`flex items-center justify-center bg-white w-14 h-14 rounded-lg border-2 transition ${
           open ? 'border-navy bg-blue-50' : 'border-navy hover:bg-blue-50'
         }`}
       >
-        <span className="text-2xl leading-none text-navy font-light" aria-hidden>+</span>
-        <span className="text-sm font-semibold text-navy">Add</span>
-        <svg
-          className={`w-3 h-3 text-navy transition-transform ${open ? 'rotate-180' : ''}`}
-          viewBox="0 0 12 12" fill="none" aria-hidden
-        >
-          <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        <span className="text-3xl leading-none text-navy font-light" aria-hidden>+</span>
       </button>
 
       {open && (

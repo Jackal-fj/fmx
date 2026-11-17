@@ -92,10 +92,9 @@ export default async function Dashboard() {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-navy">Portfolio</h1>
-        <p className="text-muted mt-1">
-          {(clients || []).length} client{(clients || []).length === 1 ? '' : 's'}  •  {properties?.length ?? 0} sites  •  Fiji
+      <div className="mb-6">
+        <p className="text-muted text-sm">
+          {(clients || []).length} client{(clients || []).length === 1 ? '' : 's'} · {properties?.length ?? 0} site{(properties?.length ?? 0) === 1 ? '' : 's'}
         </p>
       </div>
 
