@@ -75,7 +75,11 @@ Every story's acceptance criteria assume these principles — they don't need to
 
 ### [FMX-021] Add `trade` column to defects — reusing the free-text vocabulary from providers
 
-- Type: tech-debt · Size: S · Status: next · Raised: 2026-11-17
+- Type: tech-debt · Size: S · Status: done 2026-11-17 · Raised: 2026-11-17
+
+**Done notes:** Migration `fmx021_add_defects_trade` added `defects.trade text` (nullable, mirrors `providers.trade`). Backfill pass classified 133 of 195 defects (~68%) from keywords in title+description against 9 trade buckets (HVAC, Fire, Plumbing, Electrical, Genset, Garden and Landscaping, General building / roofing, Waste / skip bin hire, General Handyman). 62 unclassified rows left NULL for the FM to tag manually. Breakdown: Plumbing 57 · Electrical 31 · HVAC 17 · General building 12 · Fire 8 · Handyman 4 · Waste 2 · Garden 1 · Genset 1. `/new-defect` form has a Trade input with datalist populated from distinct `providers.trade` values. Create action persists the value.
+
+**Follow-up (not blocking):** FMX-037 raised for the remaining three paths — update-defect form inline trade edit, promote-from-draft, email-ingest — plus the dispatch-page vendor pre-filter by matching trade.
 
 **As** an FM
 **I want** every defect tagged with a trade using the same vocabulary the providers register already uses
@@ -561,6 +565,20 @@ Agreement-view-from-deep failure resolved by FMX-031 (search opens any client in
 - `/properties/[code]` FCA block and the 9-component grid stack vertically below `md:` breakpoint
 - Component rating badges keep their colour; score values right-aligned
 - No horizontal scroll at 375pt
+
+---
+
+### [FMX-037] Finish `defects.trade` rollout — promote / update / email / dispatch
+
+- Type: tech-debt · Size: S · Status: next · Raised: 2026-11-17 · Follows: FMX-021
+
+**AC**
+
+- Inline "Set trade" control on `/defects/[number]` for backfilling existing defects (no status-change required)
+- Promote-from-draft page `/defects/[number]/promote` carries a required trade field before promotion
+- Email ingest action (`fmx@cmsfiji.com` → draft defect) runs the same keyword classifier used in the FMX-021 backfill and sets trade on the draft
+- Dispatch page `/dispatch/[number]` pre-filters its provider dropdown to vendors whose `providers.trade` matches the defect's trade, with a "Show all" toggle
+- Platform report breaks down "Open by trade" and "Completed this month by trade"
 
 ---
 

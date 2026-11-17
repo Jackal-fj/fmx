@@ -17,6 +17,7 @@ export async function createDefect(formData: FormData): Promise<CreateResult> {
   const floor        = (formData.get('floor') as string || '').trim();
   const area         = (formData.get('area') as string || '').trim();
   const category     = (formData.get('category') as string || '').trim();
+  const trade        = (formData.get('trade') as string || '').trim();
   const key          = (formData.get('key') as string || '').trim();
 
   // --- secret-key gate -----------------------------------------------------
@@ -91,6 +92,7 @@ export async function createDefect(formData: FormData): Promise<CreateResult> {
       description: fullDesc || null,
       severity,
       status: 'open',
+      trade: trade || null,
     })
     .select('id, defect_number')
     .single();

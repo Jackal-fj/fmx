@@ -71,10 +71,12 @@ export default function NewDefectForm({
   properties,
   secretKey,
   prefill,
+  tradeSuggestions = [],
 }: {
   properties: PropertyOption[];
   secretKey: string;
   prefill?: Prefill;
+  tradeSuggestions?: string[];
 }) {
   const [propertyCode, setPropertyCode] = useState(prefill?.property || '');
   const [title, setTitle] = useState(prefill?.title || '');
@@ -83,6 +85,7 @@ export default function NewDefectForm({
   const [floor, setFloor] = useState(prefill?.floor || '');
   const [area, setArea] = useState(prefill?.area || '');
   const [category, setCategory] = useState(prefill?.category || '');
+  const [trade, setTrade] = useState('');
   const [previews, setPreviews] = useState<Preview[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -148,6 +151,7 @@ export default function NewDefectForm({
     fd.set('floor', floor);
     fd.set('area', area);
     fd.set('category', category);
+    fd.set('trade', trade.trim());
     fd.set('key', secretKey);
     for (const p of previews) fd.append('photos', p.file);
 
@@ -210,6 +214,23 @@ export default function NewDefectForm({
         >
           {SEVERITIES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-navy mb-1">Trade</label>
+        <input
+          type="text"
+          list="trade-suggestions"
+          value={trade}
+          onChange={e => setTrade(e.target.value)}
+          placeholder="Electrical, Plumbing, HVAC…"
+          maxLength={60}
+          className="w-full rounded-lg border border-gray-300 p-3 text-base focus:border-navy focus:outline-none"
+        />
+        <datalist id="trade-suggestions">
+          {tradeSuggestions.map(t => <option key={t} value={t} />)}
+        </datalist>
+        <p className="text-xs text-muted mt-1">Pick from the list or type a new one — groups the defect against the right vendor.</p>
       </div>
 
       <div>

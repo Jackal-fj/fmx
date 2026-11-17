@@ -52,11 +52,19 @@ export default async function NewDefectPage({
     redirect(`/defects/${encodeURIComponent(existingRef)}?highlight=1`);
   }
 
-  const { data: properties } = await supabaseServer
-    .from('properties')
-    .select('short_code, name')
-    .eq('active', true)
-    .order('short_code');
+  const [{ data: properties }, { data: tradeRows }] = await Promise.all([
+    supabaseServer
+      .from('properties')
+      .select('short_code, name')
+      .eq('active', true)
+      .order('short_code'),
+    supabaseServer
+      .from('providers')
+      .select('trade')
+      .eq('active', true)
+      .not('trade', 'is', null),
+  ]);
+  const tradeSuggestions = Array.from(new Set((tradeRows || []).map(r => r.trade as string).filter(Boolean))).sort();
 
   const propertyCodes = (properties || []).map(p => p.short_code.toUpperCase());
   const prefill = {
@@ -83,7 +91,7 @@ export default async function NewDefectPage({
           Pre-filled from a link. Review every field before saving.
         </div>
       )}
-      <NewDefectForm properties={properties || []} secretKey={key} prefill={prefill} />
+      <NewDefectForm properties={properties || []} secretKey={key} prefill={prefill} tradeSuggestions={tradeSuggestions} />
     </div>
   );
 }
