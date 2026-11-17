@@ -36,6 +36,8 @@ const TOP: NavItem[] = [
     children: [
       { href: '/vendors',     labelKey: 'nav.vendors' },
       { href: '/email-inbox', labelKey: 'nav.emailInbox' },
+      { href: '/scan',        labelKey: 'nav.scan' },
+      { href: '/labels',      labelKey: 'nav.labels' },
     ],
   },
   { href: '/reports', labelKey: 'nav.reports' },

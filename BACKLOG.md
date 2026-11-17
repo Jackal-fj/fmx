@@ -870,7 +870,20 @@ Split complete. Seven stories below carry the work. FMX-052 and FMX-054 can star
 
 ### [FMX-052] QR label generator — sites, assets, tool kits, consignments
 
-- Type: story · Size: S · Status: next · Part of: FMX-042
+- Type: story · Size: S · Status: done 2026-11-18 · Part of: FMX-042
+
+**Done notes:**
+
+- `qrcode` + `@types/qrcode` added as deps. SVG QR codes rendered server-side.
+- New page **`/labels`** under Resources in the nav. Filter chips: **Kind** (Property · Asset · Client · Agreement), optional **Property** filter when kind=asset, **Size** (A4 grid — 3 across · Large — 1 per page).
+- Each label is a QR + big readable code + sub-line. Payload is an absolute URL (uses `NEXT_PUBLIC_APP_URL` or `VERCEL_URL`); scanning in any phone QR app jumps straight to the record. Warning chip shown when neither env var is set so the operator knows relative URLs will only scan on the same host.
+- Print button fires `window.print()`. CSS media query (A4, 10mm margin) hides the nav, footer, filters, controls — only the label sheet prints.
+- `print:break-after-page` on Large size → one QR per A4 sheet. A4 grid uses 3-up Tailwind grid so it slices neatly onto Avery-style sticker stock (fine-tune to a specific stock in a follow-up once Carl picks the label).
+- Nav string `nav.labels = 'QR Labels'` added to the i18n catalogue.
+
+**Tool-kit / consignment label kinds deferred** — those tables don't exist yet. When FMX-042's inspection schema or the Phase-2 traceability consignment model lands, add two new `kind` branches to `/labels` in a follow-up.
+
+**Next wired-together story:** FMX-053 (scanner page + resolver) so the labels are useful without a third-party QR app.
 
 **AC**
 
@@ -883,7 +896,22 @@ Split complete. Seven stories below carry the work. FMX-052 and FMX-054 can star
 
 ### [FMX-053] Scanner page + resolver
 
-- Type: story · Size: M · Status: next · Part of: FMX-042 · Depends on: FMX-052
+- Type: story · Size: M · Status: done 2026-11-18 · Part of: FMX-042 · Depends on: FMX-052
+
+**Done notes:**
+
+- `jsqr@^1.4.0` added for the fallback decoder.
+- New page `/scan` (under Resources → Scan) opens the rear camera via `getUserMedia({ facingMode: 'environment' })`.
+- Decoder strategy: prefers native `BarcodeDetector` (Chromium / Android Chrome) for performance; falls back to jsQR running on canvas pixels for Safari and older browsers.
+- Payload resolver accepts full URLs or bare paths. Strips origin so a QR printed on dev host still works on prod and vice versa. Allow-list of FMX route shapes prevents a stray business-card QR navigating anywhere random.
+- Recognised kinds: Dashboard · Client · Property · Defect · Agreement · Asset · Vendor · Dispatch · Update-defect.
+- On successful scan, caches `{ href, label, at }` in `localStorage` (last 5), stops the camera stream, navigates. No re-tap confirmation — crews pick the printed label, tap once, land on the record.
+- Unknown codes stay on-screen with a hint ("Unrecognised label — this QR isn't in your catalogue. Read: …"), scanner keeps running so the FM can try another.
+- Recent scans rendered below the viewport as a one-tap re-open list.
+- Three error states handled: `denied` (permission), `unsupported` (no getUserMedia / non-HTTPS), `error` (any getUserMedia rejection).
+- `nav.scan = 'Scan'` added to i18n catalogue.
+
+**Sibling piece live:** FMX-052 QR labels generator. Print a sheet, stick them on sites/assets, scan from `/scan` to jump straight in. The 2-tap destination rule is now met for any physical thing with a QR on it: tap Scan nav → tap-free resolve → open.
 
 **AC**
 

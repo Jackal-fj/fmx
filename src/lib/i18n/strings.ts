@@ -35,6 +35,8 @@ export type Strings = {
     assets: string;
     vendors: string;
     emailInbox: string;
+    labels: string;
+    scan: string;
   };
   add: {
     aria: string;
@@ -82,6 +84,8 @@ const en: Strings = {
     assets: 'Assets',
     vendors: 'Vendors',
     emailInbox: 'Email Inbox',
+    labels: 'QR Labels',
+    scan: 'Scan',
   },
   add: {
     aria: 'New record',
