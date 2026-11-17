@@ -4,40 +4,56 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import SearchPalette from './search-palette';
+import { useT } from '@/lib/i18n/use-t';
 
-type LeafLink = { href: string; label: string };
-type GroupLink = { label: string; children: LeafLink[] };
-type TopItem = LeafLink | GroupLink;
 
-const TOP: TopItem[] = [
-  { href: '/', label: 'Dashboard' },
+// Nav structure uses i18n keys rather than literals (FMX-044).
+// useT() resolves them at render time from the locale cookie.
+type NavLeaf = { href: string; labelKey: string };
+type NavGroup = { labelKey: string; children: NavLeaf[] };
+type NavItem = NavLeaf | NavGroup;
+
+const TOP: NavItem[] = [
+  { href: '/', labelKey: 'nav.dashboard' },
   {
-    label: 'Portfolio',
+    labelKey: 'nav.portfolio',
     children: [
-      { href: '/clients',    label: 'Clients' },
-      { href: '/properties', label: 'Properties' },
+      { href: '/clients',    labelKey: 'nav.clients' },
+      { href: '/properties', labelKey: 'nav.properties' },
     ],
   },
   {
-    label: 'Work',
+    labelKey: 'nav.work',
     children: [
-      { href: '/defects',     label: 'Defects' },
-      { href: '/maintenance', label: 'Maintenance' },
-      { href: '/assets',      label: 'Assets' },
+      { href: '/defects',     labelKey: 'nav.defects' },
+      { href: '/maintenance', labelKey: 'nav.maintenance' },
+      { href: '/assets',      labelKey: 'nav.assets' },
     ],
   },
   {
-    label: 'Resources',
+    labelKey: 'nav.resources',
     children: [
-      { href: '/vendors',     label: 'Vendors' },
-      { href: '/email-inbox', label: 'Email Inbox' },
+      { href: '/vendors',     labelKey: 'nav.vendors' },
+      { href: '/email-inbox', labelKey: 'nav.emailInbox' },
     ],
   },
-  { href: '/reports', label: 'Reports' },
+  { href: '/reports', labelKey: 'nav.reports' },
 ];
 
-function isLeaf(i: TopItem): i is LeafLink {
-  return (i as LeafLink).href !== undefined;
+
+function isLeaf(i: NavItem): i is NavLeaf {
+  return (i as NavLeaf).href !== undefined;
+}
+
+// Convert any nav item's labelKey to its displayed string.
+function itemLabel(i: NavItem, t: ReturnType<typeof useT>): string {
+  // The i18n lookup will fall back to the raw key if the string is missing,
+  // which surfaces untranslated items rather than rendering blanks.
+  return t(i.labelKey as any);
+}
+
+function groupActive(g: NavGroup, isActive: (href: string) => boolean): boolean {
+  return g.children.some(c => isActive(c.href));
 }
 
 // Deep-link fallback when there is no browser history (e.g. opening a share
@@ -79,6 +95,7 @@ export default function Nav({ quickAddKey: _quickAddKey }: { quickAddKey?: strin
   const mobileRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
   const router = useRouter();
+  const t = useT();
 
   // Close everything on route change
   useEffect(() => {
@@ -112,9 +129,6 @@ export default function Nav({ quickAddKey: _quickAddKey }: { quickAddKey?: strin
     if (href === '/') return pathname === '/';
     return pathname === href || pathname.startsWith(href + '/');
   }
-  function groupActive(g: GroupLink) {
-    return g.children.some(c => isActive(c.href));
-  }
 
   const chev = (open: boolean) => (
     <svg
@@ -146,7 +160,7 @@ export default function Nav({ quickAddKey: _quickAddKey }: { quickAddKey?: strin
             <button
               type="button"
               onClick={handleBack}
-              aria-label="Back"
+              aria-label={t('nav.back')}
               className="rounded p-1.5 text-muted hover:text-navy hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-navy/30 min-w-[44px] min-h-[44px] flex items-center justify-center"
             >
               <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none" aria-hidden>
@@ -162,7 +176,7 @@ export default function Nav({ quickAddKey: _quickAddKey }: { quickAddKey?: strin
             onClick={() => setMobileOpen(o => !o)}
             aria-expanded={mobileOpen}
             aria-haspopup="true"
-            aria-label="Menu"
+            aria-label={t('nav.menu')}
             className="md:hidden rounded p-1 text-muted hover:text-navy focus:outline-none focus:ring-2 focus:ring-navy/30"
           >
             <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none" aria-hidden>
@@ -188,13 +202,13 @@ export default function Nav({ quickAddKey: _quickAddKey }: { quickAddKey?: strin
                           : 'text-muted hover:text-navy hover:bg-gray-50'
                       }`}
                     >
-                      {item.label}
+                      {itemLabel(item, t)}
                     </Link>
                   );
                 }
                 return (
-                  <div key={item.label} className="border-b">
-                    <div className="px-4 pt-2 pb-1 text-[11px] uppercase tracking-wide text-muted bg-gray-50">{item.label}</div>
+                  <div key={item.labelKey} className="border-b">
+                    <div className="px-4 pt-2 pb-1 text-[11px] uppercase tracking-wide text-muted bg-gray-50">{itemLabel(item, t)}</div>
                     {item.children.map(c => {
                       const active = isActive(c.href);
                       return (
@@ -207,7 +221,7 @@ export default function Nav({ quickAddKey: _quickAddKey }: { quickAddKey?: strin
                               : 'text-muted hover:text-navy hover:bg-gray-50'
                           }`}
                         >
-                          {c.label}
+                          {itemLabel(c, t)}
                         </Link>
                       );
                     })}
@@ -231,24 +245,24 @@ export default function Nav({ quickAddKey: _quickAddKey }: { quickAddKey?: strin
                     active ? 'text-navy font-semibold bg-blue-50' : 'text-muted hover:text-navy hover:bg-gray-50'
                   }`}
                 >
-                  {item.label}
+                  {itemLabel(item, t)}
                 </Link>
               );
             }
-            const open = openGroup === item.label;
-            const active = groupActive(item);
+            const open = openGroup === item.labelKey;
+            const active = groupActive(item, isActive);
             return (
-              <div key={item.label} className="relative">
+              <div key={item.labelKey} className="relative">
                 <button
                   type="button"
-                  onClick={() => setOpenGroup(o => o === item.label ? null : item.label)}
+                  onClick={() => setOpenGroup(o => o === item.labelKey ? null : item.labelKey)}
                   aria-expanded={open}
                   aria-haspopup="true"
                   className={`px-3 py-1.5 rounded text-sm whitespace-nowrap transition flex items-center gap-1 ${
                     active || open ? 'text-navy font-semibold bg-blue-50' : 'text-muted hover:text-navy hover:bg-gray-50'
                   }`}
                 >
-                  {item.label}
+                  {itemLabel(item, t)}
                   {chev(open)}
                 </button>
                 {open && (
@@ -265,7 +279,7 @@ export default function Nav({ quickAddKey: _quickAddKey }: { quickAddKey?: strin
                               : 'text-muted hover:text-navy hover:bg-gray-50'
                           }`}
                         >
-                          {c.label}
+                          {itemLabel(c, t)}
                         </Link>
                       );
                     })}

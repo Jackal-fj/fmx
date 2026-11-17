@@ -630,47 +630,260 @@ Agreement-view-from-deep failure resolved by FMX-031 (search opens any client in
 
 ### [FMX-040] Decision — rename FMX (US trademark conflict)
 
-- Type: decision · Size: XS (research) + variable (rename work) · Status: next · Raised: 2026-11-17
+- Type: decision · Size: XS (research) + variable (rename work) · Status: in-progress 2026-11-17
 
 **Context.** Facilities Management Express, LLC (gofmx.com), Ohio, founded 2012, markets "FMX Work Manager" and other "FMX" modules into the same K-12/facility/government category with 1,000-2,000+ customers. The 2024 strategy paper targets a $40M exit — brand clash puts that at risk.
 
-**AC**
+**Trademark search plan**
 
-- Trademark search done in Fiji (IP Office), Australia / NZ (IP Australia + IPONZ), and USPTO for the term "FMX" in classes 9 / 35 / 42
-- If any mark blocks the current use, a replacement name shortlisted (3 options) and a decision made before Phase 1 field pilot begins
-- Repo, product URLs, Supabase project name, Dropbox folders, PDFs, Xero references, email signatures all audited for occurrences of "FMX" so a rename isn't surprise work later
-- Noted: decision needed **before** investing in brand, printed QR labels, or external marketing
+Run against the term being considered (current "FMX" first for exposure assessment, then any shortlist). Minimum registries:
+
+- **Fiji IP Office** — https://ipofiji.gov.fj — trademark register search. Fiji uses the Nice Classification.
+- **IP Australia** — https://search.ipaustralia.gov.au/trademarks/search/quick — regional influence, closest major market.
+- **IPONZ (NZ)** — https://app.iponz.govt.nz/app/Extra/Default.aspx?op=EXTRA_pq_tm — same region.
+- **USPTO TESS** — https://tmsearch.uspto.gov — the gofmx.com entity sits here.
+- **WIPO Global Brand Database** — https://branddb.wipo.int — catches international registrations covering Fiji.
+
+Classes to search (Nice):
+
+- **Class 9** — downloadable software (the app itself)
+- **Class 35** — business administration, consultancy (CMS's facilities-management services)
+- **Class 42** — SaaS, software-as-a-service, hosting (the platform tier)
+- Secondary: **Class 37** (building maintenance / repair services) if the platform is bundled with CMS's own on-site services.
+
+Also do a .com / .co / .app / .fj domain availability check for the shortlist, and a Google + LinkedIn + App Store + Play Store name check so we don't collide with an unregistered but trading name.
+
+**Name candidates (first draft — 5 options, all distinctive, short, trademark-pickable)**
+
+| Candidate | Rationale | Risk / check |
+|---|---|---|
+| **Keel** | Marine metaphor (fits Pacific context + the traceability yard-to-site custody chain); 4 letters; `keel.app`, `keel.io` likely bright-line conflicts (keel.sh is an unrelated data-ops tool). | Check Keel Technologies (keel.so). |
+| **Yomi** | Short, soft, maps to "to carry / to read" in Japanese (resonates with scan+register); zero clash with existing FM/CMMS vendors I know of. | Yomi Inc is a US medical robotics company — different class. Check overlap. |
+| **Tapu** | iTaukei word (sacred, bound, prescribed) — meaningful to the Fiji market, honours local language per principle #10; three letters. | Potentially sensitive cultural term — validate with iTaukei speakers before adopting (Fijian Affairs Board input advised). |
+| **Vaka** | iTaukei for "boat / vessel" — same thesis, more universally positive connotation. | Already used by a few NGOs in the Pacific — check overlap in class 9/35/42 specifically. |
+| **Fieldstack** | Descriptive but ownable; evokes the hero-workflow stack (scan → check → snap → done → report); available in `.app` space at time of writing (verify). | Likely some Fieldstack-adjacent names exist in US CMMS — search carefully. |
+
+Shortlist criteria (narrow 5 → 2 for formal search):
+
+- One-syllable or two-syllable, under 7 letters
+- Clean across all 3 trademark registries + USPTO in classes 9/35/42
+- Domain `.app` or `.io` available; `.com` available or buyable
+- Not a pre-existing trading name in Pacific facilities management
+- Pronounceable in English, iTaukei and Fiji Hindi (principle #10)
+
+**Audit checklist — occurrences of "FMX" to replace if the rename lands**
+
+- `fmx-app/` folder name in repo (and any CI config)
+- `package.json` name, `README.md`
+- Supabase project name, storage bucket names (`defect-photos`, `reports`)
+- Dropbox folder `_tooling/fmx-app`, report filenames (`KGF-*-FM-Report.docx`)
+- Email signatures referencing "FMX"
+- `fmx@cmsfiji.com` inbound address → new address + Postmark route
+- Xero contact references, invoice line descriptions
+- Vercel project name + deployed URL
+- Every "FMX" text literal in `src/components/nav.tsx`, page titles, meta tags, the generator footer in `generate.ts`
+
+**Decision gate.** Shortlist of 2 names needs to be chosen before Phase 1 field pilot (per the strategic directive). No external brand spend / no printed QR labels until this closes.
+
+**Next action from me (Carl):** confirm trademark classes above are the right coverage, pick 1-2 candidates for formal search, and point me at any additional name constraints (investor preferences, domain budget, existing CMS sub-brands to avoid colliding with).
 
 ---
 
-### [FMX-041] Epic — Offline-first field architecture
+### [FMX-041] Epic — Offline-first field architecture (now a parent)
 
-- Type: epic · Size: L (split before building) · Status: idea · Raised: 2026-11-17
+- Type: epic · Size: L · Status: split into FMX-046..051 · Raised: 2026-11-17
 
-**As** a crew member on Rabi or the yard with patchy 4G
-**I want** every inspection, scan, photo and note to save instantly on my device and sync when a connection returns
-**So that** I never lose a reading or a photo, and the app never makes me wait
+Split complete. Six stories below carry the work. Deliver in order — each unblocks the next.
 
-**Target behaviour**
+---
 
-- All writes go to a local IndexedDB (or Supabase local-first wrapper) first; UI updates optimistically
-- Visible per-record sync chip: `Saved on device` → `Waiting to sync` → `Submitted`
-- Inspections, readings, scans, photos modelled as **append-only records** (no last-writer-wins)
-- Field-level merge for shared records (not record-level overwrite)
-- Photo uploads separate from record sync — resumable, kept locally until server confirms
-- Service worker so the app shell loads with no connection
-- Manifest for install-to-home-screen on Android/iOS
+### [FMX-046] IndexedDB local-first write queue
 
-**Likely story split** (raise when scoping)
+- Type: story · Size: M · Status: next · Part of: FMX-041 · Raised: 2026-11-17
 
-1. IndexedDB local store + write queue with retry/backoff
-2. Per-record sync-state UI chips (design system entry)
-3. Append-only data model migration (inspections, scan_events, readings)
-4. Resumable photo upload (chunked, with local-retain-until-ACK)
-5. Service worker + PWA manifest + install prompt
-6. Field-level merge resolver for shared records (e.g. asset metadata)
+**As** a crew member
+**I want** every create / update action I take in the field written to local storage before anything leaves my phone
+**So that** nothing waits on a network round-trip and nothing is lost when the connection drops
 
-**Dependencies.** Design principle #9 (append-only / explicit sync states) + principle #1 (mobile-first). Nothing in current app covers this; biggest architectural lift in the plan.
+**AC**
+
+- Dexie (or idb-keyval) wrapper exposing `enqueue(entity, op, payload)` and per-entity reads that merge local-pending + last-known-server state
+- All existing server actions wrapped in a client-side queue: write local, show optimistic state, fire the server call in the background
+- Queue has retry with exponential backoff, deduplicates idempotent ops, persists across app restarts
+- Failed ops surface in a per-record error state (not silent); user can retry or discard
+- Zero regressions on desktop: when online, UX feels identical to today
+
+---
+
+### [FMX-047] Sync-state chip (design-system entry)
+
+- Type: story · Size: S · Status: next · Part of: FMX-041 · Depends on: FMX-046
+
+**AC**
+
+- Reusable `<SyncChip state="local|queued|sent|failed" />` component. Three visible states follow design principle #9: "Saved on device" → "Waiting to sync" → "Submitted" (plus "Sync failed — retry").
+- Rendered next to every record created / edited while offline, until confirmed server-side
+- Colour + icon + word per design principle #6
+- Also rendered globally in the nav as a counter when any queue > 0 ("3 waiting")
+
+---
+
+### [FMX-048] Append-only data model for field capture
+
+- Type: story · Size: M · Status: next · Part of: FMX-041
+
+**AC**
+
+- New tables: `inspection_results` (immutable per-item answer rows), `scan_events` (who/what/where/when), `readings` (meter / gauge values)
+- Existing mutable records (defects, assets) keep their current shape; audit via the append-only tables going forward
+- Migration creates the tables + indexes; backfill not required
+- Supersedes last-writer-wins for anything touched in the field — a late-syncing phone can't overwrite a completed job
+
+---
+
+### [FMX-049] Resumable photo uploads with local-retain-until-ACK
+
+- Type: story · Size: M · Status: next · Part of: FMX-041 · Depends on: FMX-046
+
+**AC**
+
+- Photos uploaded as chunks via Supabase Storage resumable endpoint
+- Original kept in IndexedDB until the server returns a successful ACK, then evicted
+- Upload progress visible per photo; pause/resume handles airplane mode
+- Separate from the record-sync queue — a slow photo doesn't block job close
+- Works with the client-side JPEG compression pipeline already in `/new-defect` and FMX-013
+
+---
+
+### [FMX-050] Service worker + PWA manifest + install prompt
+
+- Type: story · Size: S · Status: next · Part of: FMX-041
+
+**AC**
+
+- Service worker precaches the app shell + static assets; app opens with no connection
+- `manifest.json` with app name, icon set, standalone display
+- "Add to Home Screen" prompt on first visit with the quick-add key
+- Offline fallback page lists which queued items are pending
+- Updates handled gracefully: new SW activates on next idle, not mid-inspection
+
+---
+
+### [FMX-051] Field-level merge resolver for shared records
+
+- Type: tech-debt · Size: M · Status: idea · Part of: FMX-041 · Depends on: FMX-046, FMX-048
+
+**AC**
+
+- When two devices change different fields of the same asset / defect concurrently, both changes survive the merge
+- Conflict resolution rules documented per table (last-writer-wins only for status, additive for notes, union for photo_urls, max for condition_rating)
+- Conflicts that can't auto-resolve surface in a Conflicts queue for Carl, not silently discarded (per design principle #9)
+
+---
+
+### [FMX-042] Epic — Scan → Check → Snap → Done → Report (now a parent)
+
+- Type: epic · Size: L · Status: split into FMX-052..058 · Depends on: FMX-041 · Raised: 2026-11-17
+
+Split complete. Seven stories below carry the work. FMX-052 and FMX-054 can start in parallel with the offline epic; the rest wait on at least FMX-046 (local queue) + FMX-048 (append-only tables).
+
+---
+
+### [FMX-052] QR label generator — sites, assets, tool kits, consignments
+
+- Type: story · Size: S · Status: next · Part of: FMX-042
+
+**AC**
+
+- `/labels` page: pick entity type (site / asset / tool / consignment), filter / multi-select, render a printable A4 sheet of QR codes with human-readable code beneath each
+- QR payload is a signed URL — `fmx.app/q/<short-id>` — short-id resolves to the right entity, works offline via service worker lookup
+- Printable sheet uses Avery L7651 (65-up) layout as default; A4 single column as fallback for weatherproof labels
+- Re-print respects version: a re-printed label resolves to the same entity; a reassigned asset gets a new short-id
+
+---
+
+### [FMX-053] Scanner page + resolver
+
+- Type: story · Size: M · Status: next · Part of: FMX-042 · Depends on: FMX-052
+
+**AC**
+
+- `/scan` opens the device camera with a QR overlay via `BarcodeDetector` API (Android Chrome) with a fallback JS decoder for iOS
+- Successful scan navigates to the matching entity's native page (asset detail, inspection runner, consignment handling)
+- Unknown codes show "Unrecognised label — print status: this QR isn't in your catalogue"
+- Recent scans list under the camera for one-tap re-open
+- Works offline (resolver reads IndexedDB from FMX-046 cache)
+
+---
+
+### [FMX-054] `inspection_templates` table + CRUD
+
+- Type: story · Size: M · Status: next · Part of: FMX-042
+
+**AC**
+
+- New tables: `inspection_templates` (header + metadata) + `inspection_template_items` (ordered checklist items, each with: question, kind (yes-no / rating / number / text), required, photo-required flag, fail-if condition)
+- Admin page `/inspections/templates` to create / edit / archive templates
+- Clone-from-template so Carl's current Word checklists become FMX templates without rewriting
+- Each site / asset can have one assigned template (field on properties / assets)
+
+---
+
+### [FMX-055] Checklist runner (one question per screen)
+
+- Type: story · Size: M · Status: next · Part of: FMX-042 · Depends on: FMX-054, FMX-046, FMX-048
+
+**AC**
+
+- `/inspect/[id]` runs through the template item-by-item: large question + large answer controls (yes/no, 1-5 rating, number pad, text) + optional photo + optional voice note
+- Progress bar + "skip" where template allows; required items block completion
+- Writes to `inspection_results` as each item is answered (append-only, offline-safe via FMX-046)
+- Complete button is bottom-of-viewport primary action (principle #1); shows a final summary before commit
+- Linear nav, no sub-menus (strategic directive: progressive disclosure ≤ 2 levels)
+
+---
+
+### [FMX-056] Fail → auto-job pipeline
+
+- Type: story · Size: S · Status: next · Part of: FMX-042 · Depends on: FMX-055, FMX-021
+
+**AC**
+
+- Any inspection item that fails (yes-no `no`, rating below threshold, text matching a fail condition) auto-creates a `defect` record on completion
+- Pre-filled: title from item question, description from the inspector's note, photos from the item, property from the inspection, trade from the template item (defaults picker if template didn't carry one)
+- Severity suggested from the fail magnitude (critical for red items, major for amber, moderate otherwise); inspector can override before commit
+- Links back to the originating `inspection_results` row so the audit trail is clean
+
+---
+
+### [FMX-057] Close-with-evidence (signature + attendance photo)
+
+- Type: story · Size: S · Status: next · Part of: FMX-042
+
+**AC**
+
+- Job / inspection close requires: attendance photo + signature-on-glass + optional note
+- Signature captured via `<canvas>` (touch + mouse)
+- Attendance photo captured via the FMX-013 PhotoAppender pattern
+- Close stamp written to `defect_updates` (existing table) with source = `close_with_evidence`
+- Can't close without both; "Close anyway" is explicit and audited
+
+---
+
+### [FMX-058] Report assembler consumes field capture
+
+- Type: story · Size: M · Status: next · Part of: FMX-042 · Depends on: FMX-055, FMX-057, FMX-023
+
+**AC**
+
+- Monthly performance report (FMX-023) reads directly from `inspection_results`, `defect_updates` and `scan_events` for the Monthly spotlight bullets — no re-keying
+- Spotlight bullets written straight from captured evidence: "Fire alarm test completed at KH 12 Nov (IFS-Ligaki). 2 extinguishers found expired, replaced same day."
+- Signatures and attendance photos linked from the report as evidence URLs
+- **Target: client report generated in < 10 minutes of review** once a month's inspections are complete (strategic directive target)
+
+---
+
+### [FMX-038] Email-ingest trade classifier
 
 ---
 
@@ -724,7 +937,23 @@ Adopt Google's HEART framework as FMX's UX scorecard. One dashboard; feeds every
 
 ### [FMX-044] iTaukei + Fiji Hindi UI (string table from day one)
 
-- Type: tech-debt · Size: S · Status: next · Raised: 2026-11-17
+- Type: tech-debt · Size: S · Status: done 2026-11-17 · Raised: 2026-11-17
+
+**Done notes:** Zero-dependency string catalogue + `t()` helper now live. Files:
+
+- `src/lib/i18n/strings.ts` — typed English catalogue (`Strings` type), empty `DeepPartial<Strings>` stubs for `fj` (iTaukei / Vosa Vakaviti) and `hi` (Fiji Hindi), `LOCALE_COOKIE`, `LOCALE_LABELS`, `DEFAULT_LOCALE = 'en'`.
+- `src/lib/i18n/t.ts` — `makeT(locale)` returns a translator with English fallback and `{{param}}` interpolation. Missing keys render the key itself so dev spots them fast.
+- `src/lib/i18n/server.ts` — `getT()` for server components (reads cookie via `next/headers`).
+- `src/lib/i18n/use-t.ts` — `useT()` hook for client components (reads cookie via `document.cookie`).
+- `src/components/locale-switcher.tsx` — reusable menu that writes the cookie and reloads. Not mounted by default (we'll add it to an account menu when translations arrive); available for mounting now if you want a dev toggle.
+
+Pattern proven live in `src/components/nav.tsx`: every nav label (Dashboard · Portfolio · Work · Resources · Reports · Clients · Properties · Defects · Maintenance · Assets · Vendors · Email Inbox), Back aria-label, and mobile Menu aria-label all go through `t()`. Future stories pull strings through the same helper — no new i18n plumbing needed.
+
+**Follow-ups (not blocking):**
+
+- When translators engage, drop Fijian/Hindi values into `strings.ts` under the `fj` / `hi` stubs — only the keys they've translated.
+- Add `LocaleSwitcher` to an account menu when one exists.
+- Add an ESLint rule to flag hard-coded literals in `src/components/` and `src/app/` so new strings always route through `t()`.
 
 Even before translations land, extract every UI string to a single table (next-intl or equivalent) so the Phase 3 bilingual rollout isn't a rewrite. Fallback to English until translators are engaged.
 
