@@ -925,7 +925,25 @@ Split complete. Seven stories below carry the work. FMX-052 and FMX-054 can star
 
 ### [FMX-054] `inspection_templates` table + CRUD
 
-- Type: story · Size: M · Status: next · Part of: FMX-042
+- Type: story · Size: M · Status: done 2026-11-18 · Part of: FMX-042
+
+**Done notes:**
+
+- Migration `fmx054_inspection_templates` adds two tables:
+  - `inspection_templates` — `id`, `name`, `description`, `scope` (property/asset/any), `active`, timestamps.
+  - `inspection_template_items` — `id`, `template_id` FK (cascade), `sort_order`, `question`, `kind` (yes_no/rating/number/text), `required`, `photo_required`, `trade` (feeds FMX-021/056), `fail_if` JSONB, `notes`, timestamps. `(template_id, sort_order)` unique.
+- Also adds nullable `default_inspection_template_id` FKs to both `properties` and `assets` so a scan can walk straight into the right checklist without a menu (wired by FMX-053 scanner in a follow-up).
+- Server actions (`src/app/inspections/actions.ts`): create / update / clone templates; add / update / delete / reorder items. Secret-key gated. Enum validation against DB CHECK constraints.
+- Admin page `/inspections` (under Work → Inspections) lists templates + inline create form.
+- `/inspections/[id]` — header view/edit toggle, inline items editor: click to edit question, change kind (auto-sets a sensible default fail condition per kind), toggle Required / Photo required, free-text trade, ▲▼ reorder, ✕ delete, + Add at bottom. Optimistic UI with server sync on blur/change.
+- Clone button on each template detail page — duplicates header + all items with "(copy)" suffix.
+- Read-only view when no admin key, same pattern as the agreement page (FMX-025).
+
+**Follow-ups raised:**
+
+- **FMX-063** — assignment pickers: on the property page and asset detail page, a "Default inspection" select that writes `default_inspection_template_id`. XS.
+- **FMX-064** — scanner integration: when a scan resolves to a property/asset with a default template, offer "Start inspection" on landing. S.
+- **FMX-065** — import from Word/PDF checklist (SafetyCulture-style template upload). M — the strategy note flagged this as a day-one adoption lever.
 
 **AC**
 

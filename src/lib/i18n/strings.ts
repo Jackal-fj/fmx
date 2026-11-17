@@ -33,6 +33,7 @@ export type Strings = {
     defects: string;
     maintenance: string;
     assets: string;
+    inspections: string;
     vendors: string;
     emailInbox: string;
     labels: string;
@@ -82,6 +83,7 @@ const en: Strings = {
     defects: 'Defects',
     maintenance: 'Maintenance',
     assets: 'Assets',
+    inspections: 'Inspections',
     vendors: 'Vendors',
     emailInbox: 'Email Inbox',
     labels: 'QR Labels',

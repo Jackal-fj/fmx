@@ -29,6 +29,7 @@ const TOP: NavItem[] = [
       { href: '/defects',     labelKey: 'nav.defects' },
       { href: '/maintenance', labelKey: 'nav.maintenance' },
       { href: '/assets',      labelKey: 'nav.assets' },
+      { href: '/inspections', labelKey: 'nav.inspections' },
     ],
   },
   {
