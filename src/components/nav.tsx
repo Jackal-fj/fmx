@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import SearchPalette from './search-palette';
+import SyncIndicator from './sync-indicator';
 import { useT } from '@/lib/i18n/use-t';
 
 
@@ -290,8 +291,9 @@ export default function Nav({ quickAddKey: _quickAddKey }: { quickAddKey?: strin
           })}
         </div>
 
-        {/* -------- Right: global search -------- */}
-        <div className="shrink-0">
+        {/* -------- Right: sync indicator + global search -------- */}
+        <div className="shrink-0 flex items-center gap-1">
+          <SyncIndicator />
           <SearchPalette />
         </div>
       </div>

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
+    "dexie": "^4.4.7",
     "docx": "^9.0.0",
     "next": "14.2.5",
     "react": "^18.3.1",

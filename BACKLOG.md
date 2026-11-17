@@ -699,7 +699,76 @@ Split complete. Six stories below carry the work. Deliver in order — each unbl
 
 ### [FMX-046] IndexedDB local-first write queue
 
-- Type: story · Size: M · Status: next · Part of: FMX-041 · Raised: 2026-11-17
+- Type: story · Size: M · Status: done 2026-11-18 (infrastructure landed; per-feature migration continues in follow-ups) · Part of: FMX-041 · Raised: 2026-11-17
+
+**Done notes (infrastructure):**
+
+- **Dexie** added as a dep (`dexie@^4.4.7`). New `fmx` IndexedDB database, v1 schema: `queue` table (auto-id, `kind`, `status`, `nextAttemptAt`, `dedupeKey` indices) + generic `kv` table.
+- `src/lib/offline/db.ts` — client-only Dexie singleton, exports `db()` guarded against SSR.
+- `src/lib/offline/queue.ts` — public API:
+  - `registerHandler(kind, fn)` — call sites register a handler by name
+  - `enqueue(kind, payload, { dedupeKey? })` — stores a JSON-serialisable op locally, kicks the runner
+  - `summary() / listEntries() / retry(id) / discard(id) / onChange(cb)` for the UI
+  - `startRunner()` — exponential-backoff drain, kicks on `window.online` + 30s heartbeat
+  - Max 10 attempts, 2s→5min capped backoff with jitter, dedupe-key collapse so repeated edits of the same record coalesce
+- `src/components/sync-indicator.tsx` — chip mounted in the nav. Hidden when online + nothing pending. States follow design principle #6 (colour + icon + word): `Offline` muted · `Syncing N` amber · `N sync failed` red. Also starts the retry runner on first mount.
+
+**Per-feature migrations split out as follow-ups** — the queue infra is live, but each call site still writes directly today. Migration stories to route them through `enqueue()`:
+
+- **FMX-059** — Migrate photo appender (FMX-013) onto the queue (uses `kind: 'defect.photos.append'`). Lets offline photo captures retry cleanly.
+- **FMX-060** — Migrate inline trade editor (FMX-037) onto the queue (`kind: 'defect.trade.set'`, dedupe by defect number).
+- **FMX-061** — Migrate update-defect status-change onto the queue (`kind: 'defect.status.update'`).
+- **FMX-062** — Migrate agreement editor (FMX-026) onto the queue (`kind: 'agreement.update'`).
+
+These are each S-sized — the pattern is: write a thin server-action wrapper that `enqueue()`s, register its handler on module load, swap the call site. Can be shipped as needed without blocking any of the hero-workflow stories.
+
+---
+
+### [FMX-059] Migrate photo appender onto the write queue
+
+- Type: tech-debt · Size: S · Status: next · Follows: FMX-013, FMX-046
+
+**AC**
+
+- `appendDefectPhotos` wrapped so the call site enqueues locally; photos stored in IndexedDB until the handler flushes them to Supabase Storage
+- Queue handler registered under `kind: 'defect.photos.append'`
+- Photos kept in local blobs until server ACK (ties to FMX-049 scope)
+- User sees the photo in the gallery immediately, with a sync chip on each preview until server-confirmed
+
+---
+
+### [FMX-060] Migrate inline trade editor onto the write queue
+
+- Type: tech-debt · Size: XS · Status: next · Follows: FMX-037, FMX-046
+
+**AC**
+
+- `setDefectTrade` call enqueues `{ defectNumber, trade }` with `dedupeKey = \`defect.trade.${defectNumber}\`` so the last edit wins
+- Handler registered under `kind: 'defect.trade.set'`
+- Optimistic UI stays unchanged — the chip already shows the new value immediately
+
+---
+
+### [FMX-061] Migrate update-defect status-change onto the write queue
+
+- Type: tech-debt · Size: S · Status: next · Follows: FMX-046
+
+**AC**
+
+- Status change + evidence photos enqueued as one op with per-field payload
+- Handler registered under `kind: 'defect.status.update'`
+- Photo blobs stored alongside in IndexedDB until the handler flushes
+
+---
+
+### [FMX-062] Migrate agreement editor onto the write queue
+
+- Type: tech-debt · Size: XS · Status: next · Follows: FMX-026, FMX-046
+
+**AC**
+
+- `updateAgreement` call enqueues with `dedupeKey = \`agreement.${agreementCode}\`` so rapid edits coalesce
+- Handler registered under `kind: 'agreement.update'`
 
 **As** a crew member
 **I want** every create / update action I take in the field written to local storage before anything leaves my phone
