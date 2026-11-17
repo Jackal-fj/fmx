@@ -114,10 +114,18 @@ export default async function Dashboard() {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-        <StatCard label="Sites" value={properties?.length ?? 0} hint="Active under FMX" />
-        <StatCard label="Open defects" value={totalOpen} tone={totalOpen > 30 ? 'warn' : 'navy'} />
-        <StatCard label="Critical open" value={totalCritical} tone={totalCritical ? 'bad' : 'navy'} />
-        <StatCard label="Major open" value={totalMajor} tone={totalMajor ? 'warn' : 'navy'} />
+        <Link href="/properties" className="block rounded-lg hover:ring-2 hover:ring-navy/30 transition">
+          <StatCard label="Sites" value={properties?.length ?? 0} hint="Active under FMX" />
+        </Link>
+        <Link href="/defects" className="block rounded-lg hover:ring-2 hover:ring-navy/30 transition">
+          <StatCard label="Open defects" value={totalOpen} tone={totalOpen > 30 ? 'warn' : 'navy'} />
+        </Link>
+        <Link href="/defects?severity=critical" className="block rounded-lg hover:ring-2 hover:ring-navy/30 transition">
+          <StatCard label="Critical open" value={totalCritical} tone={totalCritical ? 'bad' : 'navy'} />
+        </Link>
+        <Link href="/defects?severity=major" className="block rounded-lg hover:ring-2 hover:ring-navy/30 transition">
+          <StatCard label="Major open" value={totalMajor} tone={totalMajor ? 'warn' : 'navy'} />
+        </Link>
       </div>
 
       {(recent && recent.length > 0) && (
@@ -128,19 +136,28 @@ export default async function Dashboard() {
           </div>
           <table className="w-full text-sm">
             <tbody>
-              {recent.map((d: any) => (
-                <tr key={d.defect_number} className="border-t hover:bg-gray-50">
-                  <td className="px-4 py-2 font-mono text-xs text-muted whitespace-nowrap">{d.defect_number}</td>
-                  <td className="px-3 py-2"><Badge tone={severityTone(d.severity)}>{(d.severity || '').toUpperCase()}</Badge></td>
-                  <td className="px-3 py-2 text-xs text-muted whitespace-nowrap">
-                    {d.property ? (
-                      <Link href={`/properties/${d.property.short_code}`} className="hover:text-navy">{d.property.short_code}</Link>
-                    ) : '—'}
-                  </td>
-                  <td className="px-3 py-2">{d.title}</td>
-                  <td className="px-4 py-2 text-xs text-muted whitespace-nowrap">{(d.identified_at || '').slice(0, 10)}</td>
-                </tr>
-              ))}
+              {recent.map((d: any) => {
+                const href = `/defects/${encodeURIComponent(d.defect_number)}`;
+                return (
+                  <tr key={d.defect_number} className="border-t hover:bg-blue-50/40 transition">
+                    <td className="px-4 py-2 font-mono text-xs whitespace-nowrap">
+                      <Link href={href} className="text-navy hover:underline">{d.defect_number}</Link>
+                    </td>
+                    <td className="px-3 py-2"><Link href={href}><Badge tone={severityTone(d.severity)}>{(d.severity || '').toUpperCase()}</Badge></Link></td>
+                    <td className="px-3 py-2 text-xs text-muted whitespace-nowrap">
+                      {d.property ? (
+                        <Link href={`/properties/${d.property.short_code}`} className="hover:text-navy">{d.property.short_code}</Link>
+                      ) : '—'}
+                    </td>
+                    <td className="px-3 py-2">
+                      <Link href={href} className="hover:text-navy">{d.title}</Link>
+                    </td>
+                    <td className="px-4 py-2 text-xs text-muted whitespace-nowrap">
+                      <Link href={href} className="hover:text-navy">{(d.identified_at || '').slice(0, 10)}</Link>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

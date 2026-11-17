@@ -1,53 +1,137 @@
-# FMX Backlog
+# FMX backlog
 
-Things we've talked about but haven't shipped. New ideas go here instead of being lost in chat. Oldest at the top.
+One line per story. INVEST form — Independent, Negotiable, Valuable, Estimable, Small, Testable.
 
-## Priority
+- **Status:** `idea` · `next` · `in-progress` · `done` · `parked` · `blocked`
+- **Type:** `story` (product feature) · `bug` · `tech-debt` · `data` (backfill / reconcile) · `field` (on-site capture)
+- **Size:** S (<1 day) · M (1–3 days) · L (>3 days — split before starting)
 
-### Inbound comms → platform
-- **Email ingestion — remaining work**: Postmark Transactional send-back notifications ("Draft DEF-xxxx created from KGF email — Review in FMX") after Postmark approves the account; non-image attachment persistence (PDF quotes from vendors to a new storage bucket); LLM classification for messy senders.
-- **Client WhatsApp inbound** — only matters if we drop email as initiating channel. Deferred.
-- **WhatsApp interactive-list compliance checklist** — soft gate currently enforces 2-photo minimum. For critical defects (fire panel, backup power), consider Meta's `interactive` list messages so vendor must tap through confirmations like "panel reset: Y/N", "test alarm triggered: Y/N" before resolve is accepted.
-- **Photo backfill from pre-persistence period** — WhatsApp inbound photos received before the Supabase-persistence commit were stored only as Meta links which have now expired. Not recoverable, but worth a one-off DB cleanup to flag defects with dead `media_urls`.
+---
 
-### WhatsApp (click-to-chat path, decided 2026-10-14)
-- Dispatch now uses wa.me click-to-chat — zero Meta setup required. Carl taps "Dispatch — open in WhatsApp", FMX logs the dispatch + flips status to work_ordered, browser redirects to wa.me which opens WhatsApp with vendor + message pre-filled.
-- Trade-off: vendor replies don't auto-flow back to FMX (Cloud API webhook stuff is still coded but not wired). Carl manually marks resolved from the Update Defect page.
-- If dispatch volume ever hits 20+/week, revisit the full Cloud API migration (deregister CMS number, Meta Business, System User token, webhook, template approval).
+## Open
 
-### Dropbox mirror hardening
-- Current token is Dropbox-generated short-lived — will silently stop working
-- Build refresh-token flow so it never expires
+### [FMX-013] Attach photos to an email-sourced defect from the defect page
 
-## Nice-to-have
+- Type: story · Size: S · Status: next · Raised: 2026-11-17 (Carl)
 
-- Client hub: invoice/payment status per job from Xero (xero_contact_id is stored; needs the Xero API)
-- Client-facing read-only view per client (needs real auth first; see SAAS-NOTES)
-- Agreement renewal / CPI reminders off `client_agreements.end_date` and `cpi_escalation_pct`
+**As** an FM
+**I want** to add one or more photos to a defect after it has landed in FMX from a forwarded tenant email (`fmx@cmsfiji.com`)
+**So that** the record carries the evidence I collect on my next site visit, not only what the tenant happened to send
 
-- Per-property FM Reports mirror (into each property's `05_FM Reports/` folder, not just Client-wide)
-- Backlog `report_runs` cleanup — some early runs were tiny (13KB) failed attempts; prune or flag
-- Asset depreciation schedule page (replacement cost + install_date already captured)
-- Compliance calendar — expiring certs + insurance from `providers` table
-- Service event photos: deduplicate when same photo attached to defect resolution + service log
+**Acceptance criteria**
 
-## Shipped (recent)
+- Given I'm on `/defects/<number>` for any defect sourced from email, when I tap "Add photos" I can select one or more images from my phone's library or capture with the camera
+- Photos upload to the same Supabase storage bucket used by `/new-defect` and are appended to `defects.photo_urls` (existing photos preserved, not replaced)
+- Works for defects in `draft`, `open`, and `work_ordered` status; resolved defects are read-only
+- Upload captures `uploaded_by` + `uploaded_at` per photo so provenance survives into reports
+- Photos show in the detail page gallery immediately after upload (no manual refresh) and flow through to the platform report's "Completed this month" section and Dispatch WhatsApp message bodies
+- Mobile: single-tap "Take photo" option; batch upload of 10+ photos completes without timing out
+- Stretch (defer if it bloats the story): offline drafts upload client-side and retry when back online
 
-- **Client layer** (migration `client_layer_agreements_contacts` + `agreement_code_per_client_and_seq_reset`): clients now carry type (owner / occupier / owner occupier), legal name, TIN, Xero contact, Dropbox folder + reports sub-path; new `client_contacts` (roles, one active primary per client, invoice recipients) and `client_agreements` (AGR-{client}-NNN, type, status, term, billing, PO, invoice requirements, mgmt fee, monthly value, float, bond, CPI); `service_contracts` gain agreement_id, line_no, fee_basis, management_fee_pct; `work_orders` gain client_id (auto from property, property now optional for client-wide jobs), quote_ref, invoice_ref; `report_runs.client_id` auto-filled; view `client_overview`; email_inbox RLS enabled. New pages: /clients, /clients/[code] hub (agreement, KPIs, sites with one-tap + Defect, jobs, service lines by agreement, open defects, contacts with call/WhatsApp/email, reports), /clients/[code]/manage (all edit forms on one page, `?open=section`), /clients/new. Dashboard is multi-client (client strip + properties grouped by client), properties list has a Client column, property page has breadcrumb + "Log defect here". Nav shows inline links on wide screens and "+ New client" under More. Dropbox report + photo paths read the new DB folder columns, falling back to the old hard-coded layout. Fixed: report generation now passes the selected month to fetchReportSnapshot (was using the current month as the as-at date); reports page lists only the selected client's runs. Root error boundary added. Huawei (HW) seeded: 2 sites, AGR-HW-001 tender V3.3 with 12 lines, 5 contacts, 7 past jobs. ← 2026-11-06
-- Reports restructure to minimalist 5-section layout (Snapshot / Priority / Open items / Compliance), dropped in-document photo embedding (biggest compute saving), dropped Property Snapshot/FCA detail/Asset Register/Service Contracts/Notes sections — Carl adds commentary in cover letter; all queries now reflect state AT month-end (not generation time): FCA ≤ month-end, open items = identified ≤ month-end AND (not resolved OR resolved > month-end), compliance window = next 60 days from month-end; new "New this month" metric alongside "Resolved this month" with net-change line; hard block in reports actions + UI max= date on month-picker to prevent generation of current/future months ← 2026-11-01
-- Reports typography sanitize pass: new `clean()` helper in lib/reports/generate.ts strips em/en dashes (`—`,`–`), bullets (`•·‣◦⁃`), section marks (`§`), smart quotes (`''""`), middle dots, tildes, semicolons, non-breaking spaces, zero-width characters; replaces with safe ASCII equivalents (`-`, `.`, `|`). Wired through p(), h1/h2/h3, cell(), bullet(), and all dynamic TextRun calls (headers, footers, cover page, KPI banner, priority defect list). Author-side strings also normalised to use `-` and `|` separators instead of `—` and `•`. ← 2026-11-01
-- Multi-client support: new OOFI client + OOFI property + Pacific Building Solutions vendor added to DB; Dropbox mirror paths parameterized by client short_code (KGF retains historical `Client-wide/4. Reporting/FMX` path, new clients get `/FMX/04_CLIENTS/{client}/{property}/02_Photos/...` and `/FMX/04_CLIENTS/{client}/Reports/...`); Supabase Storage reports bucket now scoped as `{client}/{month}/{filename}`; reports page has a client picker that scopes properties and all generation; defects list gets a Client filter row that appears only when >1 client exists ← 2026-10-26
-- Dispatch to vendor refactored to wa.me click-to-chat: no Meta Cloud API dependency, server action logs the dispatch + flips defect to work_ordered + inserts a 'via_link' row in whatsapp_messages for thread continuity, then redirects browser to wa.me with vendor + message pre-filled. Photo URLs included as tappable links in the message body. ← 2026-10-14
-- Email ingestion sender classification: hard-coded KGF/tenant domain map (kineticgrowth.fund → landlord; fhradc.org.fj + ppa.org.fj → tenant:NH; mhcd.gov.fj + mcs.gov.fj → tenant:KH; odpp.gov.fj → tenant:GH); property guess now uses body keywords first then falls back to tenant-domain hint; new badges on /email-inbox for sender_kind + property_source; override via FMX_SENDER_DOMAIN_MAP env var ← 2026-10-14
-- Email ingestion smarter classification: inline signature-image filter (ContentID + image.png / image\d{3} patterns); top-message-only description trim (drops quoted history + signatures from the draft but keeps raw in email_inbox); operator-forward detection (Carl forwards from carl@cmsfiji.com → real reporter extracted from the forwarded From: line); severity de-weight in admin/compliance contexts (fire + "renewal" → major not critical) ← 2026-10-14
-- Draft defect review+promote page at /defects/[number]/promote with full field edit (title/property/severity/floor/area/category/description) + source-email context panel + reject-draft danger zone; drafts hidden from main defects list + dashboard + property pages ← 2026-10-13
-- Postmark email ingestion: /api/email webhook, email_inbox table, draft defect state, sender/DEF-ref/property/severity classification, image attachment persistence, /email-inbox review page ← 2026-10-13
-- /new-defect accepts prefill URL params (title/description/property/severity/floor/area/category) + DEF-ref auto-redirect to detail page with highlight → one-tap flow from a KGF email via iOS Shortcut ← 2026-10-13
-- Raise WO quick-action on filtered defects list + highlight banner on defect detail when linked with ?highlight=1 ← 2026-10-13
-- WhatsApp inbound auto-promote defect status + 2-photo soft gate + Meta media download + Supabase Storage persistence + Dropbox per-property photo mirror ← 2026-10-13
-- noStore + fetchCache=force-no-store on all live-data pages (defects, assets, vendors, their detail pages) ← 2026-09-29
-- new-vendor form hardened for mobile (native select, try/catch, 16px inputs) ← 2026-10-13
-- Vendor detail page + edit/delete
-- Portfolio-wide filters on defects (status/property/severity) and assets (status/property/condition/type)
-- Full FCA import for GH, KH, NH (duplicates removed, lighting resolutions applied)
-- In-app report generation (property + portfolio) with Dropbox mirror
+**Notes**
+
+- Current gap confirmed: `src/app/defects/[number]/page.tsx` has no upload widget; only `/new-defect` and `/update-defect` do.
+- Reuse the `/new-defect` uploader as a client component; add a server action `appendPhotosToDefect(defectId, urls[])`.
+
+---
+
+### [FMX-014] Backfill Nilesh invoice to DEF-2026-0032 / 0047 / 0058
+
+- Type: data · Size: S · Status: blocked (waiting on evidence) · Raised: 2026-11-17
+
+**As** an FM
+**I want** the exact completion dates, scope lines and cost against the three Nilesh-closed defects
+**So that** the platform report and the monthly claim both reconcile against a real supplier invoice
+
+**AC**
+
+- Carl locates the Nilesh invoice covering these three defect numbers
+- `resolved_at`, `resolution_notes`, `cost_fjd` populated per defect
+- Invoice filed under `KGF/<property>/5. Maintenance/Invoices/` with consistent naming
+
+---
+
+### [FMX-015] Backfill Narayans plumbing invoice dates on NH middle-floor sink + related
+
+- Type: data · Size: S · Status: blocked (waiting on evidence) · Raised: 2026-11-17
+
+**AC**
+
+- Carl locates the Narayans invoice(s)
+- Map line items to the plumbing defects raised at NH; set `resolved_at` and `resolution_notes`
+- Invoice filed; cost tracked against the NH service contract where in-scope, flagged as additional where out-of-scope
+
+---
+
+### [FMX-016] Capture AC data plates — KH-AC-L1-OFF1, L1-DIR, L1-SOFF1, L2-BR3
+
+- Type: field · Size: S · Status: next (bundle with next KH site visit) · Raised: 2026-11-17
+
+**As** an FM
+**I want** model and serial captured for the four KH AC units still listed with a placeholder plate
+**So that** the AC register is complete and warranty / spares traceability holds for the whole fleet
+
+**AC**
+
+- Per unit: clear photo of the data plate + unit label
+- `assets.model`, `assets.serial_number`, `assets.manufacturer`, `assets.capacity_kw` populated
+- Any unit found to be a Whirlpool flagged for service inclusion in next Quick Cool scope
+
+---
+
+### [FMX-017] Reconcile KH-AC-LINC25A / LINC25B placeholders against likely L1-OFF1 / L1-DIR locations
+
+- Type: data · Size: S · Status: next · Raised: 2026-11-17 · Depends on: FMX-016
+
+**AC**
+
+- After FMX-016 captures, confirm whether LINC25A/B are the same physical units as L1-OFF1 / L1-DIR
+- If yes: merge records (keep the location-coded asset_id, drop the LINC placeholder, preserve service history)
+- If no: correct the location of LINC25A/B
+
+---
+
+### [FMX-018] Capture GH-AC-NEW26 (KEG) model / serial
+
+- Type: field · Size: S · Status: next (bundle with next GH site visit) · Raised: 2026-11-17
+
+**AC**
+
+- Clear photo of the data plate on the KEG unit at GH
+- `assets.model`, `serial_number`, `manufacturer`, `capacity_kw`, `install_date` populated
+
+---
+
+### [FMX-019] Capture KH-FA-PANEL model / serial
+
+- Type: field · Size: S · Status: next (bundle with next KH visit) · Raised: 2026-11-17
+
+**AC**
+
+- Clear photo of the main fire alarm panel at KH including ident label
+- Asset record for the panel created or updated with manufacturer, model, serial, install year
+- Confirms fire-compliance evidence set alongside hose + extinguisher records
+
+---
+
+## Done
+
+### [FMX-011] Grouped navigation (Portfolio / Work / Resources)
+
+- Type: story · Size: S · Completed: 2026-11-17
+
+Collapsed 9 flat links to 5 slots (Dashboard · Portfolio ▾ · Work ▾ · Resources ▾ · Reports). Dropped the responsive breakpoint from `xl` to `md` so tablets show the full nav; mobile hamburger opens a grouped menu. Left FMX wordmark is now a direct Dashboard link, not a duplicate dropdown. Right-side actions unchanged.
+
+Touched: `src/components/nav.tsx`.
+
+---
+
+### [FMX-012] Drillable dashboard — clickable stat cards + defect rows
+
+- Type: story · Size: S · Completed: 2026-11-17
+
+Stat tiles link: Sites → `/properties`; Open defects → `/defects`; Critical open → `/defects?severity=critical`; Major open → `/defects?severity=major`. Recent-defects table rows link defect number, severity badge, title and date to `/defects/<number>`; property code still links to the property page.
+
+Touched: `src/app/page.tsx`.
+
+---
