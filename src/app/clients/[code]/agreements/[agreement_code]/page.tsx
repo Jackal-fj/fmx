@@ -5,8 +5,9 @@ import { supabaseServer } from '@/lib/supabase';
 import Badge from '@/components/badge';
 import {
   AGREEMENT_TYPES, BILLING_CYCLES, agreementTone, agreementStatusLabel,
-  fmtDate, fmtMoney, labelOf, withKey,
+  fmtDate, fmtMoney, labelOf,
 } from '@/lib/clients';
+import AgreementEditor from './editor';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -21,8 +22,10 @@ function canEditAgreement(sessionHasKey: boolean): boolean {
 
 export default async function AgreementViewPage({
   params,
+  searchParams,
 }: {
   params: { code: string; agreement_code: string };
+  searchParams: { edit?: string };
 }) {
   noStore();
   const sb = supabaseServer;
@@ -30,6 +33,7 @@ export default async function AgreementViewPage({
   const agreementCode = decodeURIComponent(params.agreement_code).toUpperCase();
   const key = process.env.QUICK_ADD_SECRET || '';
   const canEdit = canEditAgreement(!!key);
+  const editing = canEdit && searchParams.edit === '1';
 
   const { data: client } = await sb.from('clients').select('id, short_code, name').eq('short_code', clientCode).maybeSingle();
   if (!client) return notFound();
@@ -50,7 +54,8 @@ export default async function AgreementViewPage({
     .order('line_no', { ascending: true, nullsFirst: false })
     .order('contract_name');
 
-  const editHref = withKey(`/clients/${client.short_code}/manage?open=agreements`, key) + '#agreements';
+  const editHref = `/clients/${client.short_code}/agreements/${encodeURIComponent(agreement.agreement_code)}?edit=1`;
+  const viewHref = `/clients/${client.short_code}/agreements/${encodeURIComponent(agreement.agreement_code)}`;
 
   return (
     <div>
@@ -64,10 +69,10 @@ export default async function AgreementViewPage({
           <div className="text-sm text-muted mt-1">
             <span className="font-mono">{agreement.agreement_code}</span>
             {' · '}{labelOf(AGREEMENT_TYPES, agreement.agreement_type)}
-            {' · '}View only
+            {' · '}{editing ? 'Editing' : 'View only'}
           </div>
         </div>
-        {canEdit && (
+        {canEdit && !editing && (
           <Link
             href={editHref}
             className="shrink-0 rounded-md bg-navy text-white text-sm font-semibold px-4 py-2 hover:bg-blue-900 transition"
@@ -75,7 +80,29 @@ export default async function AgreementViewPage({
             Edit
           </Link>
         )}
+        {canEdit && editing && (
+          <Link
+            href={viewHref}
+            className="shrink-0 rounded-md border border-gray-300 text-navy text-sm font-semibold px-4 py-2 hover:bg-gray-50 transition"
+          >
+            Cancel
+          </Link>
+        )}
       </div>
+
+      {editing && (
+        <div className="mt-4">
+          <AgreementEditor
+            agreement={agreement as any}
+            clientShortCode={client.short_code}
+            secretKey={key}
+          />
+        </div>
+      )}
+
+      {!editing && (
+      <>
+
 
       {/* Agreement detail grid */}
       <section className="mt-6 rounded-lg border bg-white">
@@ -152,6 +179,8 @@ export default async function AgreementViewPage({
         <p className="mt-6 text-xs text-muted italic">
           Read-only view. Editing requires permission on this agreement.
         </p>
+      )}
+      </>
       )}
     </div>
   );

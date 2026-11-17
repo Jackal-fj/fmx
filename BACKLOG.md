@@ -8,6 +8,37 @@ One line per story. INVEST form — Independent, Negotiable, Valuable, Estimable
 
 ---
 
+## Strategic directive — 2026-11-17 (Carl)
+
+Shift in product direction, source: "What the Top 1% of Apps Do Differently" note.
+
+**Thesis.** Perfect one mobile, offline-first field capture loop — **Scan → Check → Snap → Done → Report** — before building anything else. Every tap must pay back the person doing it (closed job, auto-raised report, updated register) with no re-keying. Desktop console is a separate, dense surface for managers; the phone is for crews.
+
+**Named architectural gap.** The current app is online-only. Offline-first is non-negotiable for Fiji / outer-island use. Raised as FMX-041 (epic).
+
+**Named brand risk.** The US company "Facilities Management Express, LLC" (gofmx.com, founded 2012, 1,000-2,000+ customers) already owns the FMX name in this exact category. Raised as FMX-040 (decision).
+
+**The 10x axis for KGF today.** A client-branded monthly report that writes itself from field taps, replacing hours of Word formatting. FMX-023 shipped the layout; FMX-042 wires the capture loop that feeds it.
+
+**Anti-patterns to actively avoid** (now binding):
+
+- Digitising every Excel/Word tool as its own module (form-zoo). Unify on one inspection/template engine.
+- Online-only field screens. A single lost inspection on Rabi kills trust.
+- Free-text-heavy forms for low-literacy crews.
+- Dashboards that require extra data entry rather than consuming field capture.
+- Copying a dark, keyboard-first aesthetic into a sunlight, glove-wearing field app.
+- Buying tracking hardware before QR-scan discipline is proven.
+- Presenting default-factor carbon numbers as measured.
+
+**Phase targets** (reference):
+- Phase 0 (0-6wk) — rename decision, mobile-responsive inspection with large targets, auto-generated branded PDF from monthly template
+- Phase 1 (6-16wk) — offline-first field app, QR site/asset labels, fail → auto-job, WhatsApp share links
+- Phase 2 (3-6mo) — traceability pilot (Vanua Levu yard → Rabi), landed-cost rollup, GLEC default carbon
+- Phase 3 (6-12mo) — exec KPI dashboards, contractor scorecards, Xero invoice handoff, primary-data ferry factors, Fijian/Hindi UI, tool check-in/out
+- Longer bets — BLE/GPS for high-value plant, AI photo defect tagging, voice-to-form, Pacific FM template marketplace
+
+---
+
 ## Design principles (apply to every story)
 
 Confirmed with Carl 2026-11-17 and binding on everything that follows.
@@ -17,6 +48,11 @@ Confirmed with Carl 2026-11-17 and binding on everything that follows.
 3. **Scannable, not dense.** Lists over tables on mobile, one piece of information per line, severity / status conveyed with badges, not sentences.
 4. **No modals for things that can be pages.** Modals are a desktop convention that break mobile — the back button should always work.
 5. **Say as much as we can with as little as possible.** (Carl 2026-11-17.) Prefer glyphs and content to words that only restate the obvious: `+` not `+ Add`, a client name not "Portfolio: Acme", `→` not `View all →`, a magnifier icon not "Search". Headings get removed when the thing itself is the header. Every word on screen earns its place or disappears.
+6. **Status = colour + icon + word, always together.** (Strategic directive 2026-11-17.) ✓ OK (green), ⚠ DUE (amber), ✗ EXPIRED/FAIL (red). Meaning survives colour-blindness, glare and low literacy.
+7. **Field surfaces use a high-contrast light theme, not dark mode.** (Strategic directive 2026-11-17.) Sunlight, gloves, shared devices. Primary field actions 56-64dp (bigger than the 44pt mobile minimum). Thumb-zone placement at the bottom of the viewport.
+8. **Capture pays back the capturer.** (Strategic directive 2026-11-17.) Every form, scan, or photo must produce something useful to the person entering it — closed job, auto-generated report, updated scorecard — not just fill a database.
+9. **Append-only in the field, field-level merge, explicit sync states.** (Strategic directive 2026-11-17.) "Saved on device" → "Waiting to sync" → "Submitted" is visible per record. Inspections, scans and readings are append-only; shared records merge field-by-field, never last-writer-wins. Silently discarding offline work is the top trust-breaking bug.
+10. **Plain-language copy, written once, translated via a string table from day one.** (Strategic directive 2026-11-17.) English today; iTaukei / Fiji Hindi when the field pilot starts. Voice notes alongside text inputs for low-literacy crews.
 
 Every story's acceptance criteria assume these principles — they don't need to be restated. A violation of them is a defect, not a trade-off.
 
@@ -316,7 +352,9 @@ Cleanup deferred to a follow-up: in-page quick-action rows on `/clients/[code]` 
 
 ### [FMX-026] Inline edit mode on the agreement view page
 
-- Type: story · Size: M · Status: next · Raised: 2026-11-17 · Follows: FMX-025
+- Type: story · Size: M · Status: done 2026-11-17 · Raised: 2026-11-17 · Follows: FMX-025
+
+**Done notes:** Edit button on `/clients/[code]/agreements/[agreement_code]` now toggles `?edit=1` on the same URL (back button works). When editing, the view-only grid is replaced by `AgreementEditor` client component — every field is an input (dates / numbers / selects / checkbox / textareas), prefilled from the current agreement. Sticky bottom Save/Cancel bar (thumb zone per design principle 1). Server action `updateAgreement` validates: status/type/billing in their enums, end ≥ start, mgmt-fee 0-100, no negatives on money/terms, billing day 1-31. Successful save redirects back to the view URL and refreshes; Cancel does the same without saving. Status options surface Carl's confirmed labels (Active · Pending(negotiation) · Pending(tender) · Suspended · Expired · Terminated). The old Edit → `/manage?open=agreements` route is retired for this entity.
 
 **As** an FM with agreement-edit permission
 **I want** the Edit button on `/clients/[code]/agreements/[agreement_code]` to switch the current page into edit mode (inline fields, Save + Cancel)
@@ -587,6 +625,114 @@ Agreement-view-from-deep failure resolved by FMX-031 (search opens any client in
 
 - **FMX-038** — Email-ingest classifier: apply the same keyword rules used in FMX-021 backfill to the Postmark inbound action so new drafts arrive pre-tagged. XS.
 - **FMX-039** — Platform-report "Open by trade" and "Completed this month by trade" breakdowns. XS.
+
+---
+
+### [FMX-040] Decision — rename FMX (US trademark conflict)
+
+- Type: decision · Size: XS (research) + variable (rename work) · Status: next · Raised: 2026-11-17
+
+**Context.** Facilities Management Express, LLC (gofmx.com), Ohio, founded 2012, markets "FMX Work Manager" and other "FMX" modules into the same K-12/facility/government category with 1,000-2,000+ customers. The 2024 strategy paper targets a $40M exit — brand clash puts that at risk.
+
+**AC**
+
+- Trademark search done in Fiji (IP Office), Australia / NZ (IP Australia + IPONZ), and USPTO for the term "FMX" in classes 9 / 35 / 42
+- If any mark blocks the current use, a replacement name shortlisted (3 options) and a decision made before Phase 1 field pilot begins
+- Repo, product URLs, Supabase project name, Dropbox folders, PDFs, Xero references, email signatures all audited for occurrences of "FMX" so a rename isn't surprise work later
+- Noted: decision needed **before** investing in brand, printed QR labels, or external marketing
+
+---
+
+### [FMX-041] Epic — Offline-first field architecture
+
+- Type: epic · Size: L (split before building) · Status: idea · Raised: 2026-11-17
+
+**As** a crew member on Rabi or the yard with patchy 4G
+**I want** every inspection, scan, photo and note to save instantly on my device and sync when a connection returns
+**So that** I never lose a reading or a photo, and the app never makes me wait
+
+**Target behaviour**
+
+- All writes go to a local IndexedDB (or Supabase local-first wrapper) first; UI updates optimistically
+- Visible per-record sync chip: `Saved on device` → `Waiting to sync` → `Submitted`
+- Inspections, readings, scans, photos modelled as **append-only records** (no last-writer-wins)
+- Field-level merge for shared records (not record-level overwrite)
+- Photo uploads separate from record sync — resumable, kept locally until server confirms
+- Service worker so the app shell loads with no connection
+- Manifest for install-to-home-screen on Android/iOS
+
+**Likely story split** (raise when scoping)
+
+1. IndexedDB local store + write queue with retry/backoff
+2. Per-record sync-state UI chips (design system entry)
+3. Append-only data model migration (inspections, scan_events, readings)
+4. Resumable photo upload (chunked, with local-retain-until-ACK)
+5. Service worker + PWA manifest + install prompt
+6. Field-level merge resolver for shared records (e.g. asset metadata)
+
+**Dependencies.** Design principle #9 (append-only / explicit sync states) + principle #1 (mobile-first). Nothing in current app covers this; biggest architectural lift in the plan.
+
+---
+
+### [FMX-042] Epic — The hero workflow: Scan → Check → Snap → Done → Report
+
+- Type: epic · Size: L (split before building) · Status: idea · Raised: 2026-11-17 · Depends on: FMX-041
+
+**As** an FM / inspector / contractor
+**I want** to open the app, scan a QR on a site or asset, answer a short checklist, take photos, tap Done
+**So that** the inspection is complete, failed items auto-raise jobs, the compliance register updates, and the monthly client report writes itself — no re-keying anywhere
+
+**Target behaviour**
+
+- Printable per-site, per-asset, per-tool-kit, per-consignment QR labels
+- Scanner opens the day's assigned inspection or the matching asset/consignment record
+- 5-8 field checklist (not 30), one question per screen on mobile, photo + voice note per item
+- Fail → auto-create a job assigned to the right trade, pre-filled from the inspection
+- Signature + photo of attendance closes the job
+- Report writes itself: FMX-023 layout, data from today's capture, no Word editing
+
+**Likely story split**
+
+1. QR label generator (per asset/site/consignment, printable sheet)
+2. Scanner page + resolver (scan → routes to inspection or asset record)
+3. `inspection_templates` + `inspection_results` tables (append-only, per principle #9)
+4. Checklist runner UI (one-question-per-screen mobile, photo + voice note per item)
+5. Fail → auto-job pipeline (writes work_orders / dispatch draft)
+6. Close-with-evidence (signature + photo attendance)
+7. Report assembler reads capture → FMX-023 layout, zero Word editing
+
+**Target metric.** Weekly site inspection completed **in under 5 minutes on site**; monthly client report produced **in under 10 minutes** of review.
+
+---
+
+### [FMX-043] HEART metrics instrumentation
+
+- Type: story · Size: M · Status: idea · Raised: 2026-11-17
+
+Adopt Google's HEART framework as FMX's UX scorecard. One dashboard; feeds every retro.
+
+**AC**
+
+- **Happiness** — quarterly 1-question survey per role; Ellis "very disappointed" score (target ≥ 40%)
+- **Engagement** — inspections + scans per active user per week
+- **Adoption** — % of sites / contractors / consignments live in FMX
+- **Retention** — % of field users still active in month 3
+- **Task success** — median inspection time, report turnaround, sync failure rate, % of jobs closed with photo evidence
+- Private FMX-internal dashboard — separate from client-facing reports
+
+---
+
+### [FMX-044] iTaukei + Fiji Hindi UI (string table from day one)
+
+- Type: tech-debt · Size: S · Status: next · Raised: 2026-11-17
+
+Even before translations land, extract every UI string to a single table (next-intl or equivalent) so the Phase 3 bilingual rollout isn't a rewrite. Fallback to English until translators are engaged.
+
+**AC**
+
+- String catalogue established, every user-visible word in the app pulled through it
+- Locale switcher in the account menu (English today; iTaukei + Fiji Hindi stubs ready)
+- No hard-coded user-facing strings in React components; lint rule added if feasible
 
 ---
 
