@@ -1,9 +1,12 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { unstable_noStore as noStore } from 'next/cache';
 import { supabaseServer } from '@/lib/supabase';
 import DispatchForm from './form';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
 export default async function DispatchPage({
   params,
@@ -12,6 +15,7 @@ export default async function DispatchPage({
   params: { number: string };
   searchParams: { key?: string };
 }) {
+  noStore();
   const required = process.env.QUICK_ADD_SECRET;
   const key = (searchParams.key || '').trim();
   if (!required || key !== required) redirect('/');
