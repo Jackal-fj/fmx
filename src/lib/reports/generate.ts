@@ -16,6 +16,7 @@ import {
 import type {
   ReportSnapshot, Property, Fca, DefectCount, OpenDefect,
   ServiceContractRow, AssetSummaryRow, ComplianceEvent, ResolvedDefect,
+  YtdDefectCounts, CapitalWork,
 } from './data';
 
 const COMPANY = 'Commercial Management Solutions Pte Limited';
@@ -629,76 +630,407 @@ function assetSummaryTable(list: AssetSummaryRow[]): (Paragraph | Table)[] {
   return [table([header, ...rows], cw)];
 }
 
-// ----- per-property report --------------------------------------------------
+// ============================================================================
+// FM Performance Report layout (canonical).
+// Modelled on KGF_FM_Performance_Report_2026-11-16.pdf.
+// Sections: Title → Headline → YTD KPIs → Month KPIs → Portfolio snapshot
+//           → Monthly spotlight → Capital works → Service contracts
+//           → Priority open items → Forward look → Footer.
+// Used by both propertyReport() and portfolioReport() below.
+// ============================================================================
 
-// ---------------------------------------------------------------------------
-// Minimalist monthly property report.
-// Five sections. No in-document photo embedding. Each open item has a tappable
-// FMX URL for photos + full history. The whole document is driven by data that
-// reflects the state AT month-end (not generation time).
-// ---------------------------------------------------------------------------
+// -- small helpers ----------------------------------------------------------
+
+function sevSplitLabel(y: { resolved_critical?: number; resolved_major?: number; resolved_moderate?: number; resolved_minor?: number; critical?: number; major?: number; moderate?: number; minor?: number } & Record<string, any>, prefix: 'resolved' | 'open'): string {
+  const c = y[`${prefix}_critical`] ?? 0;
+  const m = y[`${prefix}_major`]    ?? 0;
+  const o = y[`${prefix}_moderate`] ?? 0;
+  const n = y[`${prefix}_minor`]    ?? 0;
+  return `${c} crit / ${m} maj / ${o} mod / ${n} min`;
+}
+
+function fmtMonth(iso: string): string {
+  return monthLabel(iso);
+}
+
+// -- 2. Headline strip -----------------------------------------------------
+
+function headlineStrip(text: string): Table {
+  const row = new TableRow({
+    children: [new TableCell({
+      borders: cellBorders,
+      width: { size: CONTENT_W, type: WidthType.DXA },
+      shading: { fill: 'EAF5EE', type: ShadingType.CLEAR, color: 'auto' },
+      margins: { top: 180, bottom: 180, left: 180, right: 180 },
+      children: [new Paragraph({
+        children: [new TextRun({ text: clean(text), bold: true, size: 22, color: '1F5B37', font: FONT })],
+      })],
+    })],
+  });
+  return table([row], [CONTENT_W]);
+}
+
+// -- 3-4. KPI cards (period-specific coloured banding) ---------------------
+// Three cards across. Each has: SMALL-CAPS LABEL, big value, sub-text.
+type Kpi = { label: string; value: string; sub?: string };
+
+function kpiCards(items: Kpi[], tint: 'ytd' | 'month' | 'plain' = 'ytd'): Table {
+  const widths: number[] = items.map(() => Math.floor(CONTENT_W / items.length));
+  const headerFill = tint === 'ytd' ? 'EAF5EE' : tint === 'month' ? 'FBEFD4' : SHADE_HEADER;
+  const row = new TableRow({
+    children: items.map((it, i) => new TableCell({
+      borders: cellBorders,
+      width: { size: widths[i], type: WidthType.DXA },
+      shading: { fill: headerFill, type: ShadingType.CLEAR, color: 'auto' },
+      margins: { top: 140, bottom: 140, left: 140, right: 140 },
+      children: [
+        new Paragraph({
+          spacing: { after: 60 },
+          children: [new TextRun({ text: clean(it.label).toUpperCase(), size: 16, color: COLOR_MUTED, font: FONT, characterSpacing: 40 })],
+        }),
+        new Paragraph({
+          spacing: { after: 40 },
+          children: [new TextRun({ text: clean(it.value), bold: true, size: 44, color: HEADING_COLOR, font: FONT })],
+        }),
+        new Paragraph({
+          children: [new TextRun({ text: clean(it.sub || ''), size: 16, color: COLOR_MUTED, font: FONT })],
+        }),
+      ],
+    })),
+  });
+  return table([row], widths);
+}
+
+// -- 5. Portfolio snapshot table -------------------------------------------
+
+function portfolioSnapshotTable(snap: ReportSnapshot): Table {
+  const cw = [1200, CONTENT_W - 7800, 1500, 1500, 1800, 1800];  // Prop / Tenant(s) / Open now / Resolved YTD / Resolved in month / Logged in month
+  const header = new TableRow({
+    tableHeader: true,
+    children: [
+      cell('Property',          { bold: true, fill: SHADE_HEADER, width: cw[0], color: HEADING_COLOR }),
+      cell('Tenant(s)',         { bold: true, fill: SHADE_HEADER, width: cw[1], color: HEADING_COLOR }),
+      cell('Open now',          { bold: true, fill: SHADE_HEADER, width: cw[2], align: AlignmentType.CENTER, color: HEADING_COLOR }),
+      cell('Resolved YTD',      { bold: true, fill: SHADE_HEADER, width: cw[3], align: AlignmentType.CENTER, color: HEADING_COLOR }),
+      cell('Resolved in month', { bold: true, fill: SHADE_HEADER, width: cw[4], align: AlignmentType.CENTER, color: HEADING_COLOR }),
+      cell('Logged in month',   { bold: true, fill: SHADE_HEADER, width: cw[5], align: AlignmentType.CENTER, color: HEADING_COLOR }),
+    ],
+  });
+  const resMap = new Map(snap.resolvedThisMonth.map(r => [r.short_code, r.count]));
+  const newMap = new Map(snap.newThisMonth.map(r => [r.short_code, r.count]));
+
+  const rows = snap.properties.map((p, i) => {
+    const fill = i % 2 ? SHADE_ROW_ALT : undefined;
+    const y   = snap.ytdByProperty.get(p.short_code);
+    const dc  = snap.defectCounts.find(d => d.short_code === p.short_code);
+    return new TableRow({
+      children: [
+        cell(`${p.short_code} ${p.name}`, { width: cw[0], size: 18, fill, bold: true }),
+        cell(p.tenant_name || '-',        { width: cw[1], size: 18, fill }),
+        cell(String(dc?.open || 0),       { width: cw[2], size: 18, align: AlignmentType.CENTER, fill }),
+        cell(String(y?.resolved_total || 0), { width: cw[3], size: 18, align: AlignmentType.CENTER, fill }),
+        cell(String(resMap.get(p.short_code) || 0), { width: cw[4], size: 18, align: AlignmentType.CENTER, fill }),
+        cell(String(newMap.get(p.short_code) || 0), { width: cw[5], size: 18, align: AlignmentType.CENTER, fill }),
+      ],
+    });
+  });
+
+  const totalResolved = snap.resolvedThisMonth.reduce((a, r) => a + r.count, 0);
+  const totalLogged   = snap.newThisMonth.reduce((a, r) => a + r.count, 0);
+  const tenantsCount  = snap.properties.filter(p => p.tenant_name).length;
+  const totalRow = new TableRow({
+    children: [
+      cell('Portfolio total', { width: cw[0], size: 18, bold: true, fill: SHADE_HEADER, color: HEADING_COLOR }),
+      cell(`${snap.properties.length} propert${snap.properties.length === 1 ? 'y' : 'ies'}, ${tenantsCount} tenanc${tenantsCount === 1 ? 'y' : 'ies'}`, { width: cw[1], size: 18, fill: SHADE_HEADER, color: COLOR_MUTED }),
+      cell(String(snap.ytdPortfolio.open_total), { width: cw[2], size: 18, align: AlignmentType.CENTER, bold: true, fill: SHADE_HEADER, color: HEADING_COLOR }),
+      cell(String(snap.ytdPortfolio.resolved_total), { width: cw[3], size: 18, align: AlignmentType.CENTER, bold: true, fill: SHADE_HEADER, color: HEADING_COLOR }),
+      cell(String(totalResolved), { width: cw[4], size: 18, align: AlignmentType.CENTER, bold: true, fill: SHADE_HEADER, color: HEADING_COLOR }),
+      cell(String(totalLogged),   { width: cw[5], size: 18, align: AlignmentType.CENTER, bold: true, fill: SHADE_HEADER, color: HEADING_COLOR }),
+    ],
+  });
+
+  return table([header, ...rows, totalRow], cw);
+}
+
+// -- 6. Monthly spotlight bullets (auto-derived) ---------------------------
+// Themes the month's activity. Hand-curated prose can be added later via an
+// editable notes table; for now derives from the data in-snapshot.
+function monthlySpotlight(snap: ReportSnapshot, reportLabel: string): Paragraph[] {
+  const out: Paragraph[] = [];
+  const thisMonthCaps = snap.capitalWorks.filter(c => c.in_report_month);
+  if (thisMonthCaps.length > 0) {
+    for (const c of thisMonthCaps) {
+      out.push(bullet(`Capital works. ${c.make_model} installed at ${c.short_code} (${c.install_date}). Added to the asset register under the ${c.item} line.`));
+    }
+  }
+  const resolvedCrit = snap.resolvedDefects.filter(d => d.severity === 'critical');
+  if (resolvedCrit.length > 0) {
+    const refs = resolvedCrit.slice(0, 4).map(d => d.defect_number).join(', ');
+    out.push(bullet(`Life-safety / critical. ${resolvedCrit.length} critical item${resolvedCrit.length === 1 ? '' : 's'} closed (${refs}${resolvedCrit.length > 4 ? ' and others' : ''}).`));
+  }
+  const resolvedMaj = snap.resolvedDefects.filter(d => d.severity === 'major');
+  if (resolvedMaj.length > 0) {
+    const refs = resolvedMaj.slice(0, 4).map(d => d.defect_number).join(', ');
+    out.push(bullet(`Major items. ${resolvedMaj.length} major item${resolvedMaj.length === 1 ? '' : 's'} closed (${refs}${resolvedMaj.length > 4 ? ' and others' : ''}).`));
+  }
+  const resolvedOther = snap.resolvedDefects.filter(d => d.severity !== 'critical' && d.severity !== 'major');
+  if (resolvedOther.length > 0) {
+    out.push(bullet(`Moderate and minor remediation. ${resolvedOther.length} item${resolvedOther.length === 1 ? '' : 's'} closed across the portfolio.`));
+  }
+  // By-property summary of what was logged
+  const loggedByProp = snap.newThisMonth.filter(n => n.count > 0);
+  if (loggedByProp.length > 0) {
+    const parts = loggedByProp.map(n => `${n.short_code} ${n.count}`).join(' / ');
+    const total = loggedByProp.reduce((a, n) => a + n.count, 0);
+    out.push(bullet(`Newly logged in ${reportLabel}. ${total} item${total === 1 ? '' : 's'} (${parts}).`));
+  }
+  if (out.length === 0) {
+    out.push(bullet(`Quiet month. No capital works installed, no critical or major items closed. Programme runs on routine PM.`));
+  }
+  return out;
+}
+
+// -- 7. Capital works table ------------------------------------------------
+
+function capitalWorksTable(items: CapitalWork[]): (Paragraph | Table)[] {
+  if (items.length === 0) {
+    return [p('No capital works installed to date.', { italics: true, color: COLOR_MUTED })];
+  }
+  const cw = [2000, 1400, CONTENT_W - 7800, 4400];  // Date / Prop / Item / Make-Model
+  const header = new TableRow({
+    tableHeader: true,
+    children: [
+      cell('Install date', { bold: true, fill: SHADE_HEADER, width: cw[0], color: HEADING_COLOR, align: AlignmentType.CENTER }),
+      cell('Property',     { bold: true, fill: SHADE_HEADER, width: cw[1], color: HEADING_COLOR, align: AlignmentType.CENTER }),
+      cell('Item',         { bold: true, fill: SHADE_HEADER, width: cw[2], color: HEADING_COLOR }),
+      cell('Make / Model', { bold: true, fill: SHADE_HEADER, width: cw[3], color: HEADING_COLOR }),
+    ],
+  });
+  const rows = items.map((c, i) => {
+    const fill = i % 2 ? SHADE_ROW_ALT : undefined;
+    return new TableRow({
+      children: [
+        cell(c.install_date, { width: cw[0], size: 18, align: AlignmentType.CENTER, fill, bold: c.in_report_month }),
+        cell(c.short_code,   { width: cw[1], size: 18, align: AlignmentType.CENTER, fill }),
+        cell(c.item,         { width: cw[2], size: 18, fill }),
+        cell(c.make_model,   { width: cw[3], size: 18, fill }),
+      ],
+    });
+  });
+  return [table([header, ...rows], cw)];
+}
+
+// -- 8. Active service contracts table -------------------------------------
+
+function activeServiceContractsTable(contracts: ServiceContractRow[]): (Paragraph | Table)[] {
+  const active = contracts.filter(c => c.active);
+  if (active.length === 0) {
+    return [p('No active service contracts recorded.', { italics: true, color: COLOR_MUTED })];
+  }
+  const cw = [CONTENT_W - 7800, 1800, 3000, 3000];  // Service / Property / Provider / Commercials
+  const header = new TableRow({
+    tableHeader: true,
+    children: [
+      cell('Service',     { bold: true, fill: SHADE_HEADER, width: cw[0], color: HEADING_COLOR }),
+      cell('Property',    { bold: true, fill: SHADE_HEADER, width: cw[1], color: HEADING_COLOR, align: AlignmentType.CENTER }),
+      cell('Provider',    { bold: true, fill: SHADE_HEADER, width: cw[2], color: HEADING_COLOR }),
+      cell('Commercials', { bold: true, fill: SHADE_HEADER, width: cw[3], color: HEADING_COLOR }),
+    ],
+  });
+  const rows = active.map((c, i) => {
+    const fill = i % 2 ? SHADE_ROW_ALT : undefined;
+    const freq = c.frequency ? ` - ${c.frequency}` : '';
+    const commercials = c.fee_amount != null
+      ? `${c.fee_currency || 'FJD'} ${Number(c.fee_amount).toLocaleString()}${freq ? ` /${c.frequency}` : ''}`
+      : '-';
+    return new TableRow({
+      children: [
+        cell(`${c.contract_name}${freq}`, { width: cw[0], size: 18, fill }),
+        cell(c.short_code || 'Portfolio', { width: cw[1], size: 18, align: AlignmentType.CENTER, fill }),
+        cell(c.provider_name || '-',      { width: cw[2], size: 18, fill }),
+        cell(commercials,                 { width: cw[3], size: 18, fill }),
+      ],
+    });
+  });
+  return [table([header, ...rows], cw)];
+}
+
+// -- 9. Priority open items (critical + major) -----------------------------
+
+function priorityOpenItemsTable(items: OpenDefect[]): (Paragraph | Table)[] {
+  const filtered = items.filter(d => d.severity === 'critical' || d.severity === 'major').sort(sortByPriority);
+  if (filtered.length === 0) {
+    return [p('No critical or major items open.', { color: OK_GREEN, italics: true })];
+  }
+  const cw = [1800, 1400, CONTENT_W - 3200];  // Ref / Property / Title
+  const header = new TableRow({
+    tableHeader: true,
+    children: [
+      cell('Ref',      { bold: true, fill: SHADE_HEADER, width: cw[0], color: HEADING_COLOR }),
+      cell('Property', { bold: true, fill: SHADE_HEADER, width: cw[1], color: HEADING_COLOR, align: AlignmentType.CENTER }),
+      cell('Title',    { bold: true, fill: SHADE_HEADER, width: cw[2], color: HEADING_COLOR }),
+    ],
+  });
+  const rows = filtered.map((d, i) => {
+    const fill = i % 2 ? SHADE_ROW_ALT : undefined;
+    const label = `${d.severity.toUpperCase()} - ${d.title}`;
+    return new TableRow({
+      children: [
+        cell(d.defect_number, { width: cw[0], size: 18, fill, bold: true }),
+        cell(d.short_code,    { width: cw[1], size: 18, align: AlignmentType.CENTER, fill }),
+        cell(label,           { width: cw[2], size: 18, fill, color: severityColor(d.severity) }),
+      ],
+    });
+  });
+  return [table([header, ...rows], cw)];
+}
+
+// -- 10. Forward look (auto-derived skeleton — tailorable later) ------------
+
+function forwardLookTable(snap: ReportSnapshot): (Paragraph | Table)[] {
+  const asOfDate = new Date(snap.asOfDate);
+  const rows: Array<{ item: string; status: string }> = [];
+
+  // Overdue service contracts
+  for (const sc of snap.serviceContracts) {
+    if (!sc.active || !sc.next_service_date) continue;
+    const due = new Date(sc.next_service_date);
+    if (isNaN(due.getTime())) continue;
+    if (due < asOfDate) {
+      const days = Math.floor((asOfDate.getTime() - due.getTime()) / (24 * 60 * 60 * 1000));
+      rows.push({
+        item: `${sc.contract_name}${sc.short_code ? ` - ${sc.short_code}` : ''}`,
+        status: `Overdue by ${days}d (was due ${sc.next_service_date}). Provider ${sc.provider_name || 'TBC'}.`,
+      });
+    }
+  }
+
+  // Open critical items as follow-on
+  const critOpen = snap.openDefects.filter(d => d.severity === 'critical').sort(sortByPriority);
+  for (const d of critOpen.slice(0, 6)) {
+    rows.push({
+      item: `${d.defect_number} - ${d.short_code} - ${d.title}`,
+      status: `Open critical, ${d.days_open ?? '?'}d old. Prioritise for next dispatch.`,
+    });
+  }
+
+  const note = p(
+    'Auto-generated from overdue service contracts and open critical items. Tailor this section in the next revision to add scoped programmes, pending awards, and client-confirmed decisions.',
+    { italics: true, color: COLOR_MUTED, size: 18, spaceAfter: 120 },
+  );
+
+  if (rows.length === 0) {
+    return [note, p('No overdue service contracts and no open critical items. Nothing flagged for the forward look.', { italics: true, color: OK_GREEN })];
+  }
+
+  const cw = [CONTENT_W - 6000, 6000];  // Item / Status
+  const header = new TableRow({
+    tableHeader: true,
+    children: [
+      cell('Item',                 { bold: true, fill: SHADE_HEADER, width: cw[0], color: HEADING_COLOR }),
+      cell('Status and next step', { bold: true, fill: SHADE_HEADER, width: cw[1], color: HEADING_COLOR }),
+    ],
+  });
+  const body = rows.map((r, i) => new TableRow({
+    children: [
+      cell(r.item,   { width: cw[0], size: 18, fill: i % 2 ? SHADE_ROW_ALT : undefined }),
+      cell(r.status, { width: cw[1], size: 18, fill: i % 2 ? SHADE_ROW_ALT : undefined }),
+    ],
+  }));
+  return [note, table([header, ...body], cw)];
+}
+
+// -- Source footer line ----------------------------------------------------
+
+function sourceFooter(snap: ReportSnapshot, agreementRef: string | null): Paragraph {
+  const bits = [
+    'Source: FMX Supabase (assets, defects, service_contracts).',
+    `Prepared by ${COMPANY}${agreementRef ? ` under ${agreementRef}` : ''}.`,
+    `State as at ${snap.asOfDate}.`,
+  ];
+  return p(bits.join(' '), { italics: true, color: COLOR_MUTED, size: 16, spaceAfter: 60 });
+}
+
+// ============================================================================
+// Property FM Performance Report — same layout, scoped to one property.
+// ============================================================================
 async function propertyReport(prop: Property, snap: ReportSnapshot, reportMonth: string): Promise<Document> {
   const reportLabel = monthLabel(reportMonth);
-  const asOf = snap.asOfDate;                         // 'YYYY-MM-DD' at month-end
-  const fca = snap.fcas.find(f => f.short_code === prop.short_code);
+  const asOf = snap.asOfDate;
   const dc  = snap.defectCounts.find(d => d.short_code === prop.short_code);
   const resolved = snap.resolvedThisMonth.find(r => r.short_code === prop.short_code)?.count ?? 0;
   const added    = snap.newThisMonth.find(r => r.short_code === prop.short_code)?.count ?? 0;
-  const propOpenDefects = snap.openDefects
-    .filter(d => d.short_code === prop.short_code)
-    .sort(sortByPriority);
+  const propOpenDefects = snap.openDefects.filter(d => d.short_code === prop.short_code).sort(sortByPriority);
+  const y = snap.ytdByProperty.get(prop.short_code) || {
+    resolved_total: 0, resolved_critical: 0, resolved_major: 0, resolved_moderate: 0, resolved_minor: 0,
+    open_total: dc?.open || 0, open_critical: dc?.critical_open || 0, open_major: dc?.major_open || 0,
+    open_moderate: dc?.moderate_open || 0, open_minor: dc?.minor_open || 0, logged_total: 0,
+  };
+  const propCaps = snap.capitalWorks.filter(c => c.short_code === prop.short_code);
+  const propCapsThisMonth = propCaps.filter(c => c.in_report_month);
+  const propContracts = snap.serviceContracts.filter(c => !c.short_code || c.short_code === prop.short_code);
+  const propResolved = snap.resolvedDefects.filter(d => d.short_code === prop.short_code);
 
-  const totalOpen = dc?.open || 0;
-  const criticalCount = dc?.critical_open || 0;
-  const majorCount = dc?.major_open || 0;
-  const netChange = added - resolved;
-  const netLabel = netChange > 0 ? `+${netChange}` : String(netChange);
-
-  const propLabel = `${prop.name} (${prop.short_code}) | ${prop.tenant_name || '-'}`;
+  const headline = `${y.resolved_total} defect${y.resolved_total === 1 ? '' : 's'} resolved YTD, ${y.open_total} open at ${asOf}. ${propCaps.length} capital item${propCaps.length === 1 ? '' : 's'} installed. ${propContracts.filter(c => c.active).length} active service contract${propContracts.filter(c => c.active).length === 1 ? '' : 's'}.`;
 
   const children: any[] = [
     ...coverPage({
-      title: `${prop.name} - FM Report`,
-      subtitle: reportLabel,
-      propLabel,
+      title: `${prop.name} - FM Performance Report`,
+      subtitle: `Year to date and ${reportLabel}`,
+      propLabel: `${prop.short_code} / ${prop.tenant_name || '-'}`,
       reportDate: asOf,
     }),
 
-    // 1. SNAPSHOT ------------------------------------------------------------
-    h1('Snapshot'),
-    p(`State as at ${asOf}.`, { italics: true, color: COLOR_MUTED, size: 18, spaceAfter: 160 }),
-    kpiBanner([
-      { label: 'Open at month-end', value: String(totalOpen), tone: totalOpen === 0 ? 'good' : totalOpen > 20 ? 'bad' : 'warn' },
-      { label: 'Critical',          value: String(criticalCount), tone: criticalCount === 0 ? 'good' : 'bad' },
-      { label: 'Major',             value: String(majorCount),    tone: majorCount === 0 ? 'good' : 'warn' },
-      { label: 'New this month',    value: String(added),   tone: 'neutral' },
-      { label: 'Resolved this month', value: String(resolved), tone: 'good' },
-    ]),
-    new Paragraph({ spacing: { before: 240 }, children: [] }),
-    p(`Net change this month: ${netLabel} ${netChange === 0 ? '(unchanged)' : netChange < 0 ? '(backlog shrinking)' : '(backlog growing)'}`,
-      { italics: true, color: netChange > 0 ? WARN_AMBER : netChange < 0 ? OK_GREEN : COLOR_MUTED }),
-    ...(fca ? [p(`FCA rating ${(fca.overall_rating || '').toUpperCase()}${fca.numeric_score != null ? ` (${Number(fca.numeric_score).toFixed(2)})` : ''} as at ${fca.assessed_at}.`, { italics: true, color: COLOR_MUTED, size: 18, spaceAfter: 120 })] : []),
+    // 2. HEADLINE STRIP
+    headlineStrip(headline),
+    new Paragraph({ spacing: { before: 200 }, children: [] }),
 
-    // 2. PRIORITY ------------------------------------------------------------
-    h1('Priority'),
-    ...priorityList(propOpenDefects, 5),
+    // 3. KPIs - YTD
+    h2(`KPIs - Year to date ${reportMonth.slice(0, 4)}`),
+    kpiCards([
+      { label: 'Defects resolved', value: String(y.resolved_total), sub: sevSplitLabel(y as any, 'resolved') },
+      { label: 'Open defects',     value: String(y.open_total),     sub: sevSplitLabel(y as any, 'open') },
+      { label: 'Capital items',    value: String(propCaps.length),  sub: propCaps.length === 0 ? 'None installed to date' : 'Installed under CMS' },
+    ], 'ytd'),
 
-    // 3. COMPLETED THIS MONTH ------------------------------------------------
-    h1('Completed this month'),
-    ...completedThisMonthTable(
-      snap.resolvedDefects.filter(d => d.short_code === prop.short_code),
+    // 4. KPIs - CURRENT MONTH
+    h2(`KPIs - ${reportLabel}`),
+    kpiCards([
+      { label: 'Defects resolved', value: String(resolved), sub: `${propResolved.filter(d => d.severity === 'critical').length} crit / ${propResolved.filter(d => d.severity === 'major').length} maj / ${propResolved.filter(d => d.severity === 'moderate').length} mod / ${propResolved.filter(d => d.severity === 'minor').length} min` },
+      { label: 'Defects logged',   value: String(added),    sub: added === 0 ? 'None' : `${prop.short_code} ${added}` },
+      { label: 'Capital / CAPEX',  value: String(propCapsThisMonth.length), sub: propCapsThisMonth[0]?.make_model || 'None this month' },
+    ], 'month'),
+
+    // 5. PORTFOLIO SNAPSHOT (single-row, for this property)
+    h2('Property snapshot - YTD and this month'),
+    portfolioSnapshotTable({ ...snap, properties: [prop] } as ReportSnapshot),
+
+    // 6. MONTHLY SPOTLIGHT
+    h2(`${reportLabel} spotlight`),
+    ...monthlySpotlight(
+      { ...snap, resolvedDefects: propResolved, capitalWorks: propCaps, newThisMonth: snap.newThisMonth.filter(n => n.short_code === prop.short_code) } as ReportSnapshot,
       reportLabel,
     ),
 
-    // 4. OPEN ITEMS REGISTER -------------------------------------------------
-    h1('Open items'),
-    p(`${propOpenDefects.length} item${propOpenDefects.length === 1 ? '' : 's'} open as at ${asOf}. Tap a reference to view the full record and photos in FMX.`, { italics: true, color: COLOR_MUTED, size: 18, spaceAfter: 120 }),
-    ...minimalOpenItemsTable(propOpenDefects),
+    // 7. CAPITAL WORKS
+    h2('Capital works'),
+    ...capitalWorksTable(propCaps),
 
-    // 5. COMPLIANCE ----------------------------------------------------------
-    h1('Compliance - next 60 days'),
-    p(`Items due between ${asOf} and ${plusDays(asOf, 60)}.`, { italics: true, color: COLOR_MUTED, size: 18, spaceAfter: 120 }),
-    ...minimalComplianceTable(snap.complianceEvents.filter(e => !e.short_code || e.short_code === prop.short_code), asOf),
+    // 8. ACTIVE SERVICE CONTRACTS
+    h2('Active service contracts'),
+    ...activeServiceContractsTable(propContracts),
+
+    // 9. PRIORITY OPEN ITEMS
+    h2('Priority open items (critical and major)'),
+    ...priorityOpenItemsTable(propOpenDefects),
+
+    // 10. FORWARD LOOK
+    h2('Forward look - next 6 months'),
+    ...forwardLookTable({ ...snap, serviceContracts: propContracts, openDefects: propOpenDefects } as ReportSnapshot),
+
+    // SOURCE FOOTER
+    new Paragraph({ spacing: { before: 320 }, children: [] }),
+    sourceFooter(snap, 'AGR-' + snap.properties[0]?.client_short_code + '-001'),
   ];
 
   return new Document({
@@ -907,62 +1239,87 @@ async function portfolioReport(snap: ReportSnapshot, reportMonth: string): Promi
   const asOf = snap.asOfDate;
   const client = snap.properties[0]?.client_name || 'Portfolio';
   const clientCode = snap.properties[0]?.client_short_code || 'KGF';
-
-  const totals = snap.defectCounts.reduce((a, d) => ({
-    open: a.open + d.open,
-    critical: a.critical + d.critical_open,
-    major: a.major + d.major_open,
-  }), { open: 0, critical: 0, major: 0 });
+  const y = snap.ytdPortfolio;
 
   const totalResolvedThisMonth = snap.resolvedThisMonth.reduce((a, r) => a + r.count, 0);
   const totalNewThisMonth = snap.newThisMonth.reduce((a, r) => a + r.count, 0);
-  const netChange = totalNewThisMonth - totalResolvedThisMonth;
-  const netLabel = netChange > 0 ? `+${netChange}` : String(netChange);
+  const activeContracts = snap.serviceContracts.filter(c => c.active).length;
+  const capsThisMonth = snap.capitalWorks.filter(c => c.in_report_month);
 
-  const priorityItems = snap.openDefects.slice().sort(sortByPriority);
+  // Headline: compact, data-driven, one sentence.
+  const balanceCount = snap.properties.filter(p => {
+    const yp = snap.ytdByProperty.get(p.short_code);
+    return yp && yp.resolved_total >= yp.open_total && yp.resolved_total > 0;
+  }).length;
+  const balanceNote = balanceCount === snap.properties.length && snap.properties.length > 1
+    ? `All ${snap.properties.length} properties now carry more resolved items than open on the year. `
+    : balanceCount > 0
+      ? `${balanceCount} of ${snap.properties.length} properties carry more resolved items than open on the year. `
+      : '';
+  const headline = `${y.resolved_total} defects resolved YTD, ${y.open_total} remaining open. ${balanceNote}${snap.capitalWorks.length} capital work${snap.capitalWorks.length === 1 ? '' : 's'} installed, ${activeContracts} service contract${activeContracts === 1 ? '' : 's'} active.`;
+
+  // Month-KPI sub-text helpers
+  const resolvedBySev = snap.resolvedDefects.reduce((a, d) => {
+    a[d.severity] = (a[d.severity] || 0) + 1;
+    return a;
+  }, {} as Record<string, number>);
+  const loggedByPropText = snap.newThisMonth.filter(n => n.count > 0).map(n => `${n.short_code} ${n.count}`).join(' / ') || 'none';
 
   const children: any[] = [
     ...coverPage({
-      title: `${client} Portfolio - FM Report`,
-      subtitle: reportLabel,
-      propLabel: `${snap.properties.length} propert${snap.properties.length === 1 ? 'y' : 'ies'}`,
+      title: `${client} Portfolio - FM Performance Report`,
+      subtitle: `Year to date and ${reportLabel}`,
+      propLabel: `${snap.properties.length} propert${snap.properties.length === 1 ? 'y' : 'ies'} / ${snap.properties.map(p => p.name).join(' / ')}`,
       reportDate: asOf,
     }),
 
-    // 1. SNAPSHOT ------------------------------------------------------------
-    h1('Snapshot'),
-    p(`State as at ${asOf}.`, { italics: true, color: COLOR_MUTED, size: 18, spaceAfter: 160 }),
-    kpiBanner([
-      { label: 'Open at month-end',   value: String(totals.open), tone: totals.open === 0 ? 'good' : 'warn' },
-      { label: 'Critical',            value: String(totals.critical), tone: totals.critical === 0 ? 'good' : 'bad' },
-      { label: 'Major',               value: String(totals.major),    tone: totals.major === 0 ? 'good' : 'warn' },
-      { label: 'New this month',      value: String(totalNewThisMonth), tone: 'neutral' },
-      { label: 'Resolved this month', value: String(totalResolvedThisMonth), tone: 'good' },
-    ]),
-    new Paragraph({ spacing: { before: 240 }, children: [] }),
-    p(`Net change this month: ${netLabel} ${netChange === 0 ? '(unchanged)' : netChange < 0 ? '(backlog shrinking)' : '(backlog growing)'}`,
-      { italics: true, color: netChange > 0 ? WARN_AMBER : netChange < 0 ? OK_GREEN : COLOR_MUTED, spaceAfter: 160 }),
+    // 2. HEADLINE STRIP
+    headlineStrip(headline),
+    new Paragraph({ spacing: { before: 200 }, children: [] }),
 
-    // Per-property one-liner summary
-    ...perPropertySummary(snap),
+    // 3. KPIs - YTD
+    h2(`KPIs - Year to date ${reportMonth.slice(0, 4)}`),
+    kpiCards([
+      { label: 'Defects resolved', value: String(y.resolved_total), sub: sevSplitLabel(y as any, 'resolved') },
+      { label: 'Open defects',     value: String(y.open_total),     sub: sevSplitLabel(y as any, 'open') },
+      { label: 'Capital items',    value: String(snap.capitalWorks.length), sub: snap.capitalWorks.length === 0 ? 'None installed' : 'AC, backup power, life safety' },
+    ], 'ytd'),
 
-    // 2. PRIORITY ------------------------------------------------------------
-    h1('Priority'),
-    ...priorityList(priorityItems, 8),
+    // 4. KPIs - CURRENT MONTH
+    h2(`KPIs - ${reportLabel}`),
+    kpiCards([
+      { label: 'Defects resolved', value: String(totalResolvedThisMonth), sub: `${resolvedBySev['critical'] || 0} crit / ${resolvedBySev['major'] || 0} maj / ${resolvedBySev['moderate'] || 0} mod / ${resolvedBySev['minor'] || 0} min` },
+      { label: 'Defects logged',   value: String(totalNewThisMonth), sub: loggedByPropText },
+      { label: 'Capital / CAPEX',  value: String(capsThisMonth.length), sub: capsThisMonth[0]?.make_model || 'None this month' },
+    ], 'month'),
 
-    // 3. COMPLETED THIS MONTH ------------------------------------------------
-    h1('Completed this month - portfolio'),
-    ...completedThisMonthTable(snap.resolvedDefects, reportLabel, { includeProperty: true }),
+    // 5. PORTFOLIO SNAPSHOT
+    h2('Portfolio snapshot - YTD and this month'),
+    portfolioSnapshotTable(snap),
 
-    // 4. OPEN ITEMS REGISTER -------------------------------------------------
-    h1('Open items - portfolio'),
-    p(`${priorityItems.length} item${priorityItems.length === 1 ? '' : 's'} open as at ${asOf}, ordered by severity then age.`, { italics: true, color: COLOR_MUTED, size: 18, spaceAfter: 120 }),
-    ...minimalPortfolioItemsTable(priorityItems),
+    // 6. MONTHLY SPOTLIGHT
+    h2(`${reportLabel} spotlight`),
+    ...monthlySpotlight(snap, reportLabel),
 
-    // 5. COMPLIANCE ----------------------------------------------------------
-    h1('Compliance - next 60 days'),
-    p(`Items due between ${asOf} and ${plusDays(asOf, 60)}.`, { italics: true, color: COLOR_MUTED, size: 18, spaceAfter: 120 }),
-    ...minimalComplianceTable(snap.complianceEvents, asOf),
+    // 7. CAPITAL WORKS
+    h2('Capital works'),
+    ...capitalWorksTable(snap.capitalWorks),
+
+    // 8. ACTIVE SERVICE CONTRACTS
+    h2(`Active service contracts (AGR-${clientCode}-001)`),
+    ...activeServiceContractsTable(snap.serviceContracts),
+
+    // 9. PRIORITY OPEN ITEMS
+    h2('Priority open items (critical and major)'),
+    ...priorityOpenItemsTable(snap.openDefects),
+
+    // 10. FORWARD LOOK
+    h2('Forward look - next 6 months'),
+    ...forwardLookTable(snap),
+
+    // SOURCE FOOTER
+    new Paragraph({ spacing: { before: 320 }, children: [] }),
+    sourceFooter(snap, `AGR-${clientCode}-001`),
   ];
 
   return new Document({

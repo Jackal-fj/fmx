@@ -84,7 +84,13 @@ One line per story. INVEST form — Independent, Negotiable, Valuable, Estimable
 
 ### [FMX-023] Adopt the KGF FM Performance Report layout as the canonical template
 
-- Type: story · Size: M · Status: next · Raised: 2026-11-17 (Carl) · Reference: `KGF_FM_Performance_Report_2026-11-16.pdf`
+- Type: story · Size: M · Status: done 2026-11-17 · Raised: 2026-11-17 (Carl) · Reference: `KGF_FM_Performance_Report_2026-11-16.pdf`
+
+**Done notes:** Both `propertyReport()` and `portfolioReport()` rewritten to the 10-section layout: Title → Headline strip → YTD KPI cards → Month KPI cards → Portfolio snapshot table → Monthly spotlight (auto bullets) → Capital works table → Active service contracts → Priority open items → Forward look → Source footer. Snapshot now carries `ytdByProperty`, `ytdPortfolio`, `capitalWorks` (installed assets with `install_date <= month-end`). Spotlight auto-derives from resolved defects + capital installs + per-property new-logged. Forward look auto-seeds from overdue service contracts + open critical items with an "edit to tailor" note. Cost-vs-rent and "under CMS" caveat dropped per Carl 2026-11-17.
+
+**Follow-ups (new stories to raise if wanted):**
+- Editable monthly spotlight narrative (overrides auto bullets)
+- `forward_look_items` table + admin page to tailor the forward-look section
 
 **As** an FM presenting monthly performance to a client
 **I want** every generated report to follow the compact 3-page FM Performance layout Carl reviewed on 16 Nov
@@ -153,6 +159,52 @@ One line per story. INVEST form — Independent, Negotiable, Valuable, Estimable
 - Current state (to confirm before building): the existing `/reports` page lists every previous run inline, which Carl flagged as noise.
 - `report_runs` table is new; migration is part of this story.
 - "Save to client folder" uses the Dropbox client-scoped path already wired for the OOFI / KGF filing conventions.
+
+---
+
+### [FMX-024] Epic — Multi-audience access: client portal and tenant intake
+
+- Type: epic · Size: L (split before building) · Status: idea · Raised: 2026-11-17 (Carl)
+
+**As** the FM operating FMX
+**I want** FMX to serve three distinct audiences — the FM team (today), the client/landlord, and the tenant — with the right surface for each
+**So that** clients see what matters to them, tenants can log and track issues without a login, and the FM team stops being a message-relay for every tenant request
+
+**Working shape (to be refined)**
+
+- **FM team (today).** Full platform. All clients, all properties, write everywhere. Role: `fm_admin`.
+- **Client / landlord (next).** Read-only web view of their portfolio: open defects, resolved YTD, service contracts, reports library, capital works. No ability to log or update. Scoped to `client_id` by a signed link or a lightweight auth. Role: `client_viewer`.
+- **Tenant (later).** No in-app UI for most cases. WhatsApp is the surface — the tenant's existing app, zero onboarding. A property-specific WhatsApp number (or a shared number with a property code the tenant sends first) accepts free text + photos, creates a `draft` defect tagged to that property + tenant, and sends a WhatsApp confirmation with the defect number. Status updates (work ordered, dispatched, resolved) push back as WhatsApp messages. Carl keeps the approval gate on the first few until the intake prompts are proven.
+
+**Why WhatsApp over a tenant portal**
+
+- Fiji tenant adoption curve on a new app is slow; everyone has WhatsApp.
+- Zero account management, no password resets, no forgotten URLs.
+- Photo intake is native and compressed sensibly.
+- Already proven inbound path: email-to-FMX works, WhatsApp-to-FMX is the same pattern with a different gateway.
+
+**Open questions to resolve before splitting into stories**
+
+- Which clients get a portal first? KGF landlord (Kinetic Growth Fund) is the obvious pilot.
+- Auth for client portal: magic-link email, Supabase Auth, or a per-client signed URL? Preference: magic-link so there's a real user record with an audit trail.
+- WhatsApp gateway: Meta Cloud API (one number, routes by property code the tenant sends on open) vs one WABA number per property (cleaner UX, more admin). Reference: current Postmark pattern handles the email-side analogue.
+- Tenant identification: match by sender WhatsApp number against `tenancies.contact_phone`, with a first-time prompt if unknown.
+- What does the tenant see back? Confirmation on log, dispatch notice, resolution notice. Anything else risks being noise.
+- RLS: Supabase row-level security policies for `client_viewer` scoped to client_id, and for any future `tenant_reporter` scoped to property_id.
+
+**Likely story split (to raise when scoping)**
+
+1. `client_viewer` role + RLS policies + magic-link login
+2. `/client/[short_code]` read-only landing with portfolio snapshot, open defects, service contracts, reports library
+3. WhatsApp intake gateway (Meta Cloud API webhook → draft defect with photos)
+4. Tenant identification + property routing (number match, fallback prompt)
+5. Outbound status notifications (dispatched, resolved) via WhatsApp template messages
+6. Audit log of every tenant-initiated and client-viewed event
+
+**Notes**
+
+- Reference: existing `/dispatch/[number]` page already uses wa.me click-through for outbound; this epic extends that pattern to inbound and to automated updates.
+- Keep the FM approval gate on anything a tenant initiates until the intake prompts are proven — same posture as the email ingest path today.
 
 ---
 

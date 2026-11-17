@@ -106,6 +106,31 @@ export type ServiceContractRow = {
   active: boolean;
 };
 
+// YTD view of defect flow — computed to the report's month-end.
+export type YtdDefectCounts = {
+  resolved_total: number;
+  resolved_critical: number;
+  resolved_major: number;
+  resolved_moderate: number;
+  resolved_minor: number;
+  open_total: number;
+  open_critical: number;
+  open_major: number;
+  open_moderate: number;
+  open_minor: number;
+  logged_total: number;
+};
+
+// Capital works installed to date — any asset carrying an install_date.
+// Used by the FM Performance Report "Capital works" section.
+export type CapitalWork = {
+  install_date: string;         // 'YYYY-MM-DD'
+  short_code: string;
+  item: string;                 // human label — e.g. "Split AC 18 KBTU (G1 Meeting Room)"
+  make_model: string;           // e.g. "KEG Proliving 18 KBTU R32"
+  in_report_month: boolean;     // true if install_date falls in the reporting month
+};
+
 export type ReportSnapshot = {
   properties: Property[];
   fcas: Fca[];
@@ -117,6 +142,9 @@ export type ReportSnapshot = {
   resolvedThisMonth: ResolvedThisMonth[];
   newThisMonth: NewThisMonth[];       // defects identified during the calendar month
   resolvedDefects: ResolvedDefect[];  // full list of defects resolved during the month (ordered by resolved_at desc)
+  ytdByProperty: Map<string, YtdDefectCounts>;     // keyed by short_code
+  ytdPortfolio: YtdDefectCounts;                    // portfolio rollup
+  capitalWorks: CapitalWork[];                      // all installed assets with install_date <= month-end
   reportMonth: string;                // YYYY-MM that this snapshot represents
   asOfDate: string;                   // ISO date at month-end used as the "as-at" reference for all queries
 };
@@ -440,6 +468,95 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF', repor
   }
   const assetSummary = Object.values(assetMap);
 
+  // --- YTD defect flow ------------------------------------------------------
+  // Window: Jan 1 of the report's year 00:00 UTC → month-end (exclusive).
+  // Three metrics per property: resolved-YTD (resolved_at in window),
+  // open-at-month-end (already in defectCounts), logged-YTD (identified_at
+  // in window). Severity splits only for resolved-YTD and open — that's
+  // what the KPI cards need.
+  const ytdStart = new Date(Date.UTC(monthYear, 0, 1));
+  const emptyYtd = (): YtdDefectCounts => ({
+    resolved_total: 0, resolved_critical: 0, resolved_major: 0, resolved_moderate: 0, resolved_minor: 0,
+    open_total: 0, open_critical: 0, open_major: 0, open_moderate: 0, open_minor: 0,
+    logged_total: 0,
+  });
+  const ytdByProperty = new Map<string, YtdDefectCounts>();
+  for (const p of properties) ytdByProperty.set(p.short_code, emptyYtd());
+  const ytdPortfolio = emptyYtd();
+
+  // Open-at-month-end splits come from defectCounts (already severity-split).
+  for (const dc of defectCounts) {
+    const y = ytdByProperty.get(dc.short_code);
+    if (!y) continue;
+    y.open_total     += dc.open;
+    y.open_critical  += dc.critical_open;
+    y.open_major     += dc.major_open;
+    y.open_moderate  += dc.moderate_open;
+    y.open_minor     += dc.minor_open;
+  }
+  ytdPortfolio.open_total     = defectCounts.reduce((a, d) => a + d.open, 0);
+  ytdPortfolio.open_critical  = defectCounts.reduce((a, d) => a + d.critical_open, 0);
+  ytdPortfolio.open_major     = defectCounts.reduce((a, d) => a + d.major_open, 0);
+  ytdPortfolio.open_moderate  = defectCounts.reduce((a, d) => a + d.moderate_open, 0);
+  ytdPortfolio.open_minor     = defectCounts.reduce((a, d) => a + d.minor_open, 0);
+
+  // Resolved-YTD severity splits: pull all defects resolved in the YTD window.
+  const { data: ytdResolvedRows } = await sb
+    .from('defects')
+    .select(`severity, resolved_at, property:property_id ( short_code, client_id )`)
+    .eq('status', 'resolved')
+    .gte('resolved_at', ytdStart.toISOString())
+    .lt('resolved_at', asOfIso);
+  for (const r of (ytdResolvedRows || []) as any[]) {
+    if (!r.property || r.property.client_id !== clientId) continue;
+    const y = ytdByProperty.get(r.property.short_code);
+    if (!y) continue;
+    y.resolved_total += 1;
+    if (r.severity === 'critical') { y.resolved_critical += 1; ytdPortfolio.resolved_critical += 1; }
+    if (r.severity === 'major')    { y.resolved_major    += 1; ytdPortfolio.resolved_major    += 1; }
+    if (r.severity === 'moderate') { y.resolved_moderate += 1; ytdPortfolio.resolved_moderate += 1; }
+    if (r.severity === 'minor')    { y.resolved_minor    += 1; ytdPortfolio.resolved_minor    += 1; }
+    ytdPortfolio.resolved_total += 1;
+  }
+
+  // Logged-YTD totals from allDefects (already fetched for defectCounts).
+  for (const d of (allDefects || []) as any[]) {
+    if (!d.property || d.property.client_id !== clientId) continue;
+    if (!d.identified_at) continue;
+    const idt = new Date(d.identified_at);
+    if (idt >= ytdStart && idt < monthEnd) {
+      const y = ytdByProperty.get(d.property.short_code);
+      if (y) y.logged_total += 1;
+      ytdPortfolio.logged_total += 1;
+    }
+  }
+
+  // --- Capital works --------------------------------------------------------
+  // Installed assets with install_date <= month-end. In-report-month flag lets
+  // the KPI "Capital / CAPEX" card pick out this month's installs.
+  const { data: capRows } = await sb
+    .from('assets')
+    .select(`install_date, asset_type, name, make, model,
+      property:property_id ( short_code, client_id )`)
+    .eq('active', true)
+    .not('install_date', 'is', null)
+    .lte('install_date', asOfIso.slice(0, 10))
+    .order('install_date', { ascending: false });
+  const capitalWorks: CapitalWork[] = [];
+  for (const a of (capRows || []) as any[]) {
+    if (!a.property || a.property.client_id !== clientId) continue;
+    const makeModel = [a.make, a.model].filter(Boolean).join(' ').trim() || '-';
+    const itemLabel = a.name && a.name !== a.asset_type ? a.name : (a.asset_type || 'Asset');
+    const inMonth = a.install_date >= monthStartIso.slice(0, 10) && a.install_date < asOfIso.slice(0, 10);
+    capitalWorks.push({
+      install_date: a.install_date,
+      short_code: a.property.short_code,
+      item: itemLabel,
+      make_model: makeModel,
+      in_report_month: inMonth,
+    });
+  }
+
   return {
     properties,
     fcas,
@@ -451,6 +568,9 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF', repor
     resolvedThisMonth,
     newThisMonth,
     resolvedDefects,
+    ytdByProperty,
+    ytdPortfolio,
+    capitalWorks,
     reportMonth: month,
     asOfDate: asOfIso.slice(0, 10),
   };
