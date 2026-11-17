@@ -757,7 +757,17 @@ Split complete. Six stories below carry the work. Deliver in order — each unbl
 
 ### [FMX-050] Service worker + PWA manifest + install prompt
 
-- Type: story · Size: S · Status: next · Part of: FMX-041
+- Type: story · Size: S · Status: done 2026-11-18 · Part of: FMX-041
+
+**Done notes:**
+
+- **Manifest** — `src/app/manifest.ts` served at `/manifest.webmanifest`. Standalone display, portrait orientation, FMX navy theme, 4 icon sizes (SVG + 192/512/maskable-512 PNG), 3 categories. Apple-touch icon at 180×180 covers iOS add-to-home-screen.
+- **Icons generated** — `public/icon.svg` is the single source; ImageMagick converts in `public/icon-192.png`, `icon-512.png`, `icon-maskable-512.png` (padded for platform masks), `apple-icon.png`. Rebuild when the brand changes.
+- **Service worker** — `public/sw.js`. Install precaches the shell (`/`, `/offline`, manifest, icons). `activate` purges old cache versions. Fetch strategy: navigation = network-first → cached shell → offline page; static = cache-first; `/api/*` + HMR = passthrough; non-GET = passthrough (writes go to FMX-046 queue, not the SW). Cache key `fmx-shell-v1` — bump on every shell-changing deploy.
+- **Registration** — `src/components/sw-register.tsx` registers `/sw.js` in production only (keeps `next dev` sane). New workers activate via `SKIP_WAITING` + `controllerchange` reload — users aren't interrupted mid-inspection, the next idle is when the new build takes over.
+- **Offline fallback page** — `/offline` is a static page precached by the SW so a navigation that fails returns a real page, not a browser error.
+- **Layout wired** — `src/app/layout.tsx` adds Viewport (no zoom-out, 1.0 initial scale — field use), icons metadata, Apple web-app hints, mounts `<ServiceWorkerRegister />`.
+- **Install prompt deferred to stretch** — modern Android Chrome auto-prompts when install criteria are met, and iOS doesn't allow programmatic prompts. If a visible "Install FMX" button is wanted, raised as a follow-up (needs a `beforeinstallprompt` capture).
 
 **AC**
 
