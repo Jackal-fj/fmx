@@ -121,8 +121,7 @@ export default async function ClientHub({ params }: { params: { code: string } }
     <div>
       {/* Header */}
       <div className="mb-5">
-        <Link href="/clients" className="text-sm text-muted hover:text-navy">← Clients</Link>
-        <div className="flex flex-wrap items-baseline justify-between gap-2 mt-2">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h1 className="text-3xl font-bold text-navy">{client.name}</h1>
           <span className="text-muted font-mono">{client.short_code}</span>
         </div>
@@ -134,11 +133,8 @@ export default async function ClientHub({ params }: { params: { code: string } }
         </p>
       </div>
 
-      {/* Quick actions: one tap to everything */}
+      {/* Quick destinations — add actions live under the global + Add menu */}
       <div className="flex gap-2 overflow-x-auto pb-2 mb-6 -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap">
-        {key && <QA href={withKey(`/new-defect${singleProp ? `?property=${singleProp}` : ''}`, key)} primary>+ Log defect</QA>}
-        {key && <QA href={manage('jobs')}>+ Job</QA>}
-        {key && <QA href={manage('contacts')}>+ Contact</QA>}
         <QA href={`/defects?client=${encodeURIComponent(client.short_code)}`}>Defects</QA>
         <QA href={`/reports?client=${encodeURIComponent(client.short_code)}`}>Reports</QA>
         {key && <QA href={manage('client')}>Manage</QA>}
@@ -231,11 +227,6 @@ export default async function ClientHub({ params }: { params: { code: string } }
                         <div className={`text-lg font-bold ${open > 10 ? 'text-warn' : 'text-navy'}`}>{open}</div>
                         <div className="text-[10px] uppercase text-muted">open</div>
                       </div>
-                      {key && (
-                        <Link href={withKey(`/new-defect?property=${p.short_code}`, key)} className="shrink-0 rounded-md border border-navy text-navy text-xs font-semibold px-2 py-1.5 hover:bg-navy hover:text-white">
-                          + Defect
-                        </Link>
-                      )}
                     </div>
                   );
                 })}

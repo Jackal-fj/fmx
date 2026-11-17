@@ -28,7 +28,6 @@ export default async function NewAssetPage({
 
   return (
     <div className="max-w-md mx-auto">
-      <Link href="/assets" className="text-sm text-muted hover:text-navy">← Back to assets</Link>
       <h1 className="text-2xl font-bold text-navy mt-2 mb-1">Add asset</h1>
       <p className="text-sm text-muted mb-6">
         Register a new asset. Only property, name, and type are required — everything else can be filled in later.

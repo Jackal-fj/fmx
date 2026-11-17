@@ -13,6 +13,8 @@ export default async function Dashboard() {
   noStore();
   const sb = supabaseServer;
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  const quickAddKey = process.env.QUICK_ADD_SECRET || '';
+  const withKey = (base: string) => quickAddKey ? `${base}?key=${encodeURIComponent(quickAddKey)}` : base;
 
   // Fire all 4 queries in parallel. Total time = slowest single query,
   // not sum of all. Was ~2s sequential; ~500ms in parallel.
@@ -113,6 +115,24 @@ export default async function Dashboard() {
         ))}
       </div>
 
+      {/* + Add block — the single place create actions live (FMX-036) */}
+      {quickAddKey && (
+        <section className="mb-8 rounded-lg border bg-white">
+          <div className="px-4 py-2.5 border-b flex items-baseline justify-between">
+            <h2 className="text-sm font-bold text-navy uppercase tracking-wide">+ Add</h2>
+            <span className="text-xs text-muted">Create a new record</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-px bg-gray-100">
+            <AddTile href={withKey('/new-defect')}    label="+ Log defect"     hint="Raise a new defect"             primary />
+            <AddTile href={withKey('/update-defect')} label="+ Update defect"  hint="Close or change an existing defect" />
+            <AddTile href={withKey('/new-asset')}     label="+ Add asset"      hint="Register new equipment" />
+            <AddTile href={withKey('/new-vendor')}    label="+ Add vendor"     hint="Register a contractor" />
+            <AddTile href={withKey('/service-log')}   label="+ Log service"    hint="Record a service event" />
+            <AddTile href={withKey('/clients/new')}   label="+ New client"     hint="Set up a client, agreement, sites" />
+          </div>
+        </section>
+      )}
+
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
         <Link href="/properties" className="block rounded-lg hover:ring-2 hover:ring-navy/30 transition">
           <StatCard label="Sites" value={properties?.length ?? 0} hint="Active under FMX" />
@@ -210,5 +230,17 @@ export default async function Dashboard() {
       </section>
       ))}
     </div>
+  );
+}
+
+function AddTile({ href, label, hint, primary }: { href: string; label: string; hint: string; primary?: boolean }) {
+  return (
+    <Link
+      href={href}
+      className={`block bg-white px-4 py-3 min-h-[76px] hover:bg-blue-50 transition ${primary ? 'sm:col-span-1' : ''}`}
+    >
+      <div className={`text-sm font-semibold ${primary ? 'text-navy' : 'text-navy'}`}>{label}</div>
+      <div className="text-xs text-muted mt-0.5">{hint}</div>
+    </Link>
   );
 }

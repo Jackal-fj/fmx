@@ -54,13 +54,8 @@ export default async function AgreementViewPage({
 
   return (
     <div>
-      {/* Breadcrumb */}
-      <Link href={`/clients/${client.short_code}`} className="text-sm text-muted hover:text-navy">
-        ← {client.name}
-      </Link>
-
       {/* Header + Edit button */}
-      <div className="mt-2 flex flex-wrap items-baseline justify-between gap-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-bold text-navy">{agreement.name}</h1>

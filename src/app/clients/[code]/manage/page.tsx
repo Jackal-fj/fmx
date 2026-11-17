@@ -61,7 +61,6 @@ export default async function ManageClient({
 
   return (
     <div className="max-w-3xl mx-auto">
-      <Link href={`/clients/${client.short_code}`} className="text-sm text-muted hover:text-navy">← {client.name}</Link>
       <h1 className="text-2xl font-bold text-navy mt-2">Manage {client.short_code}</h1>
       <p className="text-sm text-muted mb-4">Everything for this client on one page. Tap a section to open it.</p>
 

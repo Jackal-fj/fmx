@@ -49,8 +49,7 @@ export default async function EditAssetPage({
 
   return (
     <div className="max-w-md mx-auto">
-      <Link href={`/assets/${asset.id}?key=${encodeURIComponent(key)}`} className="text-sm text-muted hover:text-navy">← Back to asset</Link>
-      <h1 className="text-2xl font-bold text-navy mt-2 mb-1">Edit asset</h1>
+      <h1 className="text-2xl font-bold text-navy mb-1">Edit asset</h1>
       <p className="text-sm text-muted mb-6">Update any field. Existing photos are preserved.</p>
 
       <EditAssetForm

@@ -47,8 +47,7 @@ export default async function ServiceLogPage({
 
   return (
     <div className="max-w-md mx-auto">
-      <Link href={`/service-log?key=${encodeURIComponent(key)}`} className="text-sm text-muted hover:text-navy">← Back to asset list</Link>
-      <h1 className="text-2xl font-bold text-navy mt-2 mb-1">Log service</h1>
+      <h1 className="text-2xl font-bold text-navy mb-1">Log service</h1>
       <p className="text-sm text-muted mb-6">
         Record a service event with photo evidence. Updates last-serviced and next-due dates.
       </p>

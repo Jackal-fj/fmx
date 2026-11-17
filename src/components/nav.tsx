@@ -67,12 +67,14 @@ function inferParent(pathname: string): string {
   return '/';
 }
 
-export default function Nav({ quickAddKey }: { quickAddKey?: string }) {
+// NOTE: create actions (+ Log defect, + Add vendor, etc.) are intentionally
+// NOT in this nav. Per FMX-036, they live on the dashboard in a dedicated
+// Add block so the nav stays single-purpose (navigation only). `quickAddKey`
+// is still threaded through for the hamburger's awareness of session state.
+export default function Nav({ quickAddKey: _quickAddKey }: { quickAddKey?: string }) {
   const [openGroup, setOpenGroup] = useState<string | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const groupRef = useRef<HTMLDivElement>(null);
-  const addRef = useRef<HTMLDivElement>(null);
   const mobileRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
   const router = useRouter();
@@ -80,26 +82,22 @@ export default function Nav({ quickAddKey }: { quickAddKey?: string }) {
   // Close everything on route change
   useEffect(() => {
     setOpenGroup(null);
-    setAddOpen(false);
     setMobileOpen(false);
   }, [pathname]);
 
   // Close on click outside + Escape
   useEffect(() => {
-    if (openGroup === null && !addOpen && !mobileOpen) return;
+    if (openGroup === null && !mobileOpen) return;
     const handler = (e: MouseEvent) => {
       if (openGroup !== null && groupRef.current && !groupRef.current.contains(e.target as Node)) {
         setOpenGroup(null);
-      }
-      if (addOpen && addRef.current && !addRef.current.contains(e.target as Node)) {
-        setAddOpen(false);
       }
       if (mobileOpen && mobileRef.current && !mobileRef.current.contains(e.target as Node)) {
         setMobileOpen(false);
       }
     };
     const keyHandler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setOpenGroup(null); setAddOpen(false); setMobileOpen(false); }
+      if (e.key === 'Escape') { setOpenGroup(null); setMobileOpen(false); }
     };
     document.addEventListener('mousedown', handler);
     document.addEventListener('keydown', keyHandler);
@@ -107,39 +105,7 @@ export default function Nav({ quickAddKey }: { quickAddKey?: string }) {
       document.removeEventListener('mousedown', handler);
       document.removeEventListener('keydown', keyHandler);
     };
-  }, [openGroup, addOpen, mobileOpen]);
-
-  const withKey = (base: string) => quickAddKey ? `${base}?key=${encodeURIComponent(quickAddKey)}` : base;
-
-  // Consolidated Add menu — grouped by domain.
-  const addGroups: { label: string; items: { href: string; label: string; hint: string }[] }[] = quickAddKey ? [
-    {
-      label: 'Defect',
-      items: [
-        { href: withKey('/new-defect'),    label: 'Log defect',    hint: 'Raise a new defect' },
-        { href: withKey('/update-defect'), label: 'Update defect', hint: 'Edit or close an existing defect' },
-      ],
-    },
-    {
-      label: 'Register',
-      items: [
-        { href: withKey('/new-asset'),  label: 'Add asset',   hint: 'Register new equipment' },
-        { href: withKey('/new-vendor'), label: 'Add vendor',  hint: 'Register a contractor' },
-      ],
-    },
-    {
-      label: 'Service',
-      items: [
-        { href: withKey('/service-log'), label: 'Log service event', hint: 'Record a service event' },
-      ],
-    },
-    {
-      label: 'Client',
-      items: [
-        { href: withKey('/clients/new'),  label: 'New client',   hint: 'Set up a client, agreement and sites' },
-      ],
-    },
-  ] : [];
+  }, [openGroup, mobileOpen]);
 
   function isActive(href: string) {
     if (href === '/') return pathname === '/';
@@ -205,22 +171,6 @@ export default function Nav({ quickAddKey }: { quickAddKey?: string }) {
 
           {mobileOpen && (
             <div className="md:hidden absolute left-0 top-full mt-2 rounded-md border bg-white shadow-lg min-w-[260px] max-h-[80vh] overflow-y-auto">
-              {/* Add actions pinned to the top on mobile */}
-              {addGroups.length > 0 && (
-                <div className="border-b bg-blue-50/50">
-                  <div className="px-4 pt-2 pb-1 text-[11px] uppercase tracking-wide text-navy font-semibold">+ Add</div>
-                  {addGroups.map(g => (
-                    <div key={g.label}>
-                      <div className="px-4 pt-1 pb-0.5 text-[10px] uppercase tracking-wide text-muted">{g.label}</div>
-                      {g.items.map(it => (
-                        <Link key={it.href} href={it.href} className="block px-4 py-2 text-sm text-navy hover:bg-white">
-                          + {it.label}
-                        </Link>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              )}
               <div className="px-4 py-2 border-b bg-gray-50">
                 <div className="text-xs font-semibold text-navy uppercase tracking-wide">Navigate</div>
               </div>
@@ -325,48 +275,6 @@ export default function Nav({ quickAddKey }: { quickAddKey?: string }) {
           })}
         </div>
 
-        {/* -------- Right: consolidated Add menu -------- */}
-        {addGroups.length > 0 && (
-          <div ref={addRef} className="relative hidden md:block">
-            <button
-              type="button"
-              onClick={() => setAddOpen(o => !o)}
-              aria-expanded={addOpen}
-              aria-haspopup="true"
-              className={`rounded-md text-sm font-semibold px-3 py-1.5 whitespace-nowrap transition flex items-center gap-1 ${
-                addOpen
-                  ? 'bg-navy text-white'
-                  : 'border border-navy text-navy hover:bg-navy hover:text-white'
-              }`}
-            >
-              + Add
-              <svg className={`w-3 h-3 transition-transform ${addOpen ? 'rotate-180' : ''}`} viewBox="0 0 12 12" fill="none" aria-hidden>
-                <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
-            {addOpen && (
-              <div className="absolute right-0 top-full mt-2 rounded-md border bg-white shadow-lg min-w-[260px] max-h-[80vh] overflow-y-auto">
-                {addGroups.map((g, gi) => (
-                  <div key={g.label} className={gi > 0 ? 'border-t' : ''}>
-                    <div className="px-4 pt-2 pb-1 text-[11px] uppercase tracking-wide text-muted bg-gray-50">
-                      {g.label}
-                    </div>
-                    {g.items.map(it => (
-                      <Link
-                        key={it.href}
-                        href={it.href}
-                        className="block px-4 py-2 hover:bg-gray-50 transition"
-                      >
-                        <div className="text-sm font-medium text-navy">+ {it.label}</div>
-                        <div className="text-xs text-muted">{it.hint}</div>
-                      </Link>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </nav>
   );

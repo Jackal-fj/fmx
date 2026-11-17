@@ -64,14 +64,10 @@ export default async function PropertyDetail({ params }: { params: { code: strin
             property.address,
           ].filter(Boolean).join('  •  ') || '—'}
         </p>
-        {process.env.QUICK_ADD_SECRET && (
-          <div className="flex gap-2 mt-3">
-            <Link href={`/new-defect?property=${encodeURIComponent(property.short_code)}&key=${encodeURIComponent(process.env.QUICK_ADD_SECRET)}`}
-              className="rounded-full bg-navy text-white text-sm font-semibold px-4 py-2 hover:bg-blue-900">+ Log defect here</Link>
-            <Link href={`/defects?property=${encodeURIComponent(property.short_code)}`}
-              className="rounded-full border border-gray-300 text-navy text-sm font-semibold px-4 py-2 hover:border-navy">All defects</Link>
-          </div>
-        )}
+        <div className="flex gap-2 mt-3">
+          <Link href={`/defects?property=${encodeURIComponent(property.short_code)}`}
+            className="rounded-full border border-gray-300 text-navy text-sm font-semibold px-4 py-2 hover:border-navy">All defects</Link>
+        </div>
       </div>
 
       {/* FCA */}

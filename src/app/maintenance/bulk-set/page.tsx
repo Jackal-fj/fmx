@@ -39,12 +39,7 @@ export default async function BulkSetPage({
 
   return (
     <div className="max-w-2xl mx-auto">
-      <Link
-        href={`/maintenance?key=${encodeURIComponent(key)}`}
-        className="text-sm text-muted hover:text-navy"
-      >← Back to maintenance</Link>
-
-      <h1 className="text-2xl font-bold text-navy mt-2 mb-1">Bulk-set PM intervals</h1>
+      <h1 className="text-2xl font-bold text-navy mb-1">Bulk-set PM intervals</h1>
       <p className="text-sm text-muted mb-6">
         Set the same service interval on many assets at once — pick the interval, filter by property or type,
         check the assets, save. Existing schedules are overwritten.

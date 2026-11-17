@@ -73,8 +73,7 @@ export default async function ReportsHistoryPage({
 
   return (
     <div>
-      <Link href={backHref} className="text-sm text-muted hover:text-navy">← Back to Reports</Link>
-      <div className="mb-6 mt-2">
+      <div className="mb-6">
         <h1 className="text-2xl font-bold text-navy">Download history</h1>
         <p className="text-sm text-muted mt-1">
           Every generated report, newest month first. Use this to re-download or audit who ran what.

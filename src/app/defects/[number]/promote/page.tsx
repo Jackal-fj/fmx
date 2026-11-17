@@ -70,9 +70,7 @@ export default async function PromoteDraftPage({
 
   return (
     <div className="max-w-xl mx-auto">
-      <Link href="/email-inbox" className="text-sm text-muted hover:text-navy">← Email Inbox</Link>
-
-      <div className="flex items-baseline justify-between mt-2 mb-1 gap-3 flex-wrap">
+      <div className="flex items-baseline justify-between mb-1 gap-3 flex-wrap">
         <h1 className="text-2xl font-bold text-navy">Review draft defect</h1>
         <span className="font-mono text-xs text-muted">{defect.defect_number}</span>
       </div>

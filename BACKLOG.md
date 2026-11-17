@@ -448,6 +448,39 @@ Agreement-view-from-deep failure resolved by FMX-031 (search opens any client in
 
 ---
 
+### [FMX-036] Move "+ Add" off the nav and onto the dashboard
+
+- Type: story · Size: S · Status: done 2026-11-17 · Raised: 2026-11-17 (Carl)
+
+**Done notes:** `+ Add ▾` dropdown and related state removed from `components/nav.tsx` entirely — nav is now navigation-only (`[← Back] FMX [Dashboard · Portfolio · Work · Resources · Reports]`). Mobile hamburger no longer carries the Add section either. Dashboard grew a new `+ Add` section below the client strip, above the stat tiles: 6-tile grid (Log defect · Update defect · Add asset · Add vendor · Log service · New client), 2-col on mobile / 3-col on tablet / 6-col on desktop, min 44pt touch targets, each tile a single-tap into its create form. Dashboard access via FMX wordmark → + Add tile. Design principles updated to note the trade-off was accepted.
+
+**As** an FM
+**I want** the top navigation to carry navigation only — no create actions — and every "+ Add" action collected into a dedicated block on the dashboard
+**So that** the nav bar is uncluttered and single-purpose (get me somewhere), and adding something is a deliberate stop at the dashboard, not a dropdown I keep opening while trying to navigate
+
+**Acceptance criteria**
+
+- Remove the `+ Add ▾` dropdown from the top nav entirely. Nav becomes: `[← Back] FMX [Dashboard · Portfolio ▾ · Work ▾ · Resources ▾ · Reports]` — navigation only
+- Dashboard grows a prominent `+ Add` section, near the top, above the Recent defects table but below the client strip
+- The + Add block renders as a responsive grid of action tiles — one tap per action, no dropdown:
+  - **+ Log defect** (primary tint)
+  - **+ Update defect**
+  - **+ Add asset**
+  - **+ Add vendor**
+  - **+ Log service event**
+  - **+ New client**
+- Each tile has an icon (optional, text-only is fine), label, and one-line hint; min 44pt touch target; 2-col on mobile, 3-col on tablet, 6-col on desktop
+- Tapping a tile goes straight to the create form (no intermediate menu)
+- Deep-page access to add actions: FMX wordmark → + Add tile = 2 taps to the Add block, 3 total to a specific create. Carl confirmed this trade-off is acceptable — cleaner nav outweighs the deep-page add speed
+- Mobile hamburger menu no longer carries "+ Add" entries; the Add block on the dashboard is the only source
+
+**Notes**
+
+- Supersedes the right-side `+ Add ▾` cluster introduced by FMX-027. Keep the Back button; only the Add menu moves.
+- Design principles updated 2026-11-17 to reflect that the 2-tap rule applies to *navigation destinations*; create actions are allowed 3 taps from deep pages because they live on the dashboard.
+
+---
+
 ### [FMX-031] Global search / command palette — reach any entity in 2 taps
 
 - Type: story · Size: M · Status: next · Raised: 2026-11-17 · Follows: FMX-030

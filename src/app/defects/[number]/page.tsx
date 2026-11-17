@@ -80,8 +80,6 @@ export default async function DefectDetail({
 
   return (
     <div className="max-w-3xl">
-      <Link href="/defects" className="text-sm text-muted hover:text-navy">← Back to defects</Link>
-
       {defect.status === 'draft' && dispatchKey && (
         <div className="mt-3 mb-1 rounded-md border-2 border-orange-400 bg-orange-50 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
           <div className="text-sm text-navy font-medium">

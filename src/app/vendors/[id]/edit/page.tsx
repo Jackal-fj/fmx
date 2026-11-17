@@ -38,8 +38,7 @@ export default async function EditVendorPage({
 
   return (
     <div className="max-w-md mx-auto">
-      <Link href={`/vendors/${vendor.id}`} className="text-sm text-muted hover:text-navy">← Back to vendor</Link>
-      <h1 className="text-2xl font-bold text-navy mt-2 mb-1">Edit vendor</h1>
+      <h1 className="text-2xl font-bold text-navy mb-1">Edit vendor</h1>
       <p className="text-sm text-muted mb-6">Update contact, rates, compliance, rating, notes.</p>
 
       <EditVendorForm vendor={vendor} secretKey={key} />

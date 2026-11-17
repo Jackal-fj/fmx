@@ -59,12 +59,7 @@ export default async function UpdateDefectByNumber({
 
   return (
     <div className="max-w-md mx-auto">
-      <Link
-        href={`/update-defect?key=${encodeURIComponent(key)}`}
-        className="text-sm text-muted hover:text-navy"
-      >← Back to defect list</Link>
-
-      <h1 className="text-2xl font-bold text-navy mt-2 mb-1">Update defect</h1>
+      <h1 className="text-2xl font-bold text-navy mb-1">Update defect</h1>
       <p className="text-sm text-muted mb-6">
         Change status with photo evidence. At least one photo is required.
       </p>

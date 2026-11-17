@@ -13,7 +13,6 @@ export default function NewClientPage({ searchParams }: { searchParams: { key?: 
 
   return (
     <div className="max-w-2xl mx-auto">
-      <Link href="/clients" className="text-sm text-muted hover:text-navy">← Clients</Link>
       <h1 className="text-2xl font-bold text-navy mt-2 mb-1">New client</h1>
       <p className="text-sm text-muted mb-6">
         Name and short code are enough to start. You will land on the client&apos;s manage page to add the agreement, contacts and sites.
