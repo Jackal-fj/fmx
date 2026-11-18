@@ -38,6 +38,7 @@ export type Strings = {
     emailInbox: string;
     labels: string;
     scan: string;
+    metrics: string;
   };
   add: {
     aria: string;
@@ -88,6 +89,7 @@ const en: Strings = {
     emailInbox: 'Email Inbox',
     labels: 'QR Labels',
     scan: 'Scan',
+    metrics: 'Metrics',
   },
   add: {
     aria: 'New record',

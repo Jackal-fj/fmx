@@ -630,7 +630,32 @@ Agreement-view-from-deep failure resolved by FMX-031 (search opens any client in
 
 ### [FMX-040] Decision — rename FMX (US trademark conflict)
 
-- Type: decision · Size: XS (research) + variable (rename work) · Status: in-progress 2026-11-17
+- Type: decision · Size: XS (research) + variable (rename work) · Status: name-provisional 2026-11-19
+
+**Provisional working name: Snaplog.** Carl's call 2026-11-19 after a three-round naming pass + light knock-out search. Codebase + bucket names stay `fmx-app` until formal trademark clearance lands — no rename work commences until then. The brand name used in UI, reports and signatures will switch when FMX-040 closes "adopted".
+
+**Why Snaplog made it through:**
+
+- Verb-driven, maps 1:1 to the hero workflow (Scan → Check → **Snap** → Done → Report) and to the FM Performance Report that writes itself from field taps.
+- Single USPTO filing (SNAP+LOG, D3 Dynasty Holdings, Sept 2025) is already dead.
+- No live registered trademark covering Classes 9/35/42 for Snaplog.
+- "Snapdog" was briefly on the table and clearable, but reads consumer-cute rather than professional-FM.
+
+**Known residual risks — resolve before formal adoption:**
+
+1. **Snap Log Pty Ltd (AU)** operates `Snap Log`, a clinical-data iOS app with AI text recognition on the AU App Store. Different category (healthcare vs FM) but same spelling, Class 9 overlap. IP Australia filing will need an argument on sub-category distinctness. Fiji IPO typically clears unless the AU mark is well-known internationally (it isn't).
+2. **App Store ambiguity.** "Snap Log" is taken on AU App Store. Ship as **Snaplog** (one word) — Apple generally treats as distinct, but file a defensive App Store name alongside TM.
+3. **Formal trademark search still outstanding** across Fiji IPO, IP Australia, IPONZ, USPTO TESS, WIPO Global Brand Database — the ToolSearch pass above was a knock-out only, not a clearance.
+4. **Domain + handle availability** not yet checked: `snaplog.app`, `snaplog.io`, `snaplog.com.fj`, `@snaplog` on LinkedIn / X / Instagram.
+
+**Next actions (Carl, offline):**
+
+- Commission a formal trademark search on Snaplog in Classes 9/35/42 across the five registries listed above.
+- Grab `snaplog.app` / `.io` and the Fiji ccTLD defensively while the formal search runs (cheap insurance).
+- Email Snap Log Pty Ltd a courtesy ping confirming you're in a different category — paper trail helps if they oppose later.
+- If any of the above throws a hard blocker, fall back order from the shortlist: **Keypoint → Daybook → Yavu → Keepsite**.
+
+**Audit checklist remains unchanged** — see the list below. It fires when FMX-040 closes "adopted", not before.
 
 **Context.** Facilities Management Express, LLC (gofmx.com), Ohio, founded 2012, markets "FMX Work Manager" and other "FMX" modules into the same K-12/facility/government category with 1,000-2,000+ customers. The 2024 strategy paper targets a $40M exit — brand clash puts that at risk.
 
@@ -1291,7 +1316,17 @@ Split complete. Seven stories below carry the work. FMX-052 and FMX-054 can star
 
 ### [FMX-043] HEART metrics instrumentation
 
-- Type: story · Size: M · Status: idea · Raised: 2026-11-17
+- Type: story · Size: M · Status: done 2026-11-19 · Raised: 2026-11-17
+
+**Done notes:**
+
+- New `/metrics` page under Resources → Metrics in the nav. Internal only (gate = QUICK_ADD_SECRET), labeled explicitly "not for client reports".
+- **Engagement** — inspections / scans / defects logged / defects resolved per 30d, each with a `▲ · ▼` arrow vs the prior 30d. Plus median items per inspection (target 5–8 from the hero workflow) and count of defects auto-raised from inspections per 30d.
+- **Adoption** — % active properties with a default inspection template (warn tone below 50%), % defects tagged with a trade (warn below 70%), active template count, distinct templates used in the last 30d.
+- **Task success** — % inspections closed with signature + attendance photo (warn below 90%), % resolved defects with photo evidence (warn below 80%), median inspection duration in minutes (warn above 10, targets < 5 per the strategic directive).
+- **Happiness + Retention** — stubbed with placeholder cards flagging the dependencies: Happiness needs a survey (Sean Ellis PMF), Retention needs real user accounts (FMX-024).
+- Everything queries the existing tables — no new instrumentation. Scoped by the active-properties filter naturally through the FKs.
+- Trend arrows use a ±5% band so the display is stable against normal noise.
 
 Adopt Google's HEART framework as FMX's UX scorecard. One dashboard; feeds every retro.
 
