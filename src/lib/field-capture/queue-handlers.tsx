@@ -41,7 +41,10 @@ type CompletePayload = KeyBundle & {
     notes?: string | null;
   };
 };
-type RaisePayload = KeyBundle & { session_id: string };
+type RaisePayload = KeyBundle & {
+  session_id: string;
+  overrides?: Record<string, { severity?: 'critical' | 'major' | 'moderate' | 'minor'; trade?: string | null }>;
+};
 type ResultPayload = KeyBundle & { result: InspectionResult };
 type ScanPayload = KeyBundle & { scan: ScanEvent };
 
@@ -66,9 +69,10 @@ function registerAll() {
 
   // inspection.raiseDefects — fires the fail→job pipeline (FMX-056).
   // Sequenced to run after completeSession via the dedupeKey pattern in
-  // the caller, not by the handler itself.
+  // the caller, not by the handler itself. FMX-069: overrides per
+  // template_item_id get threaded through to deriveSeverity+trade.
   registerHandler('inspection.raiseDefects', async (p: RaisePayload) => {
-    const r = await raiseDefectsFromSession(p.session_id, p.key);
+    const r = await raiseDefectsFromSession(p.session_id, p.key, p.overrides);
     if (!r.ok) throw new Error(r.error);
   });
 

@@ -162,9 +162,17 @@ function deriveSeverity(result: {
   return 'moderate';
 }
 
+// FMX-069: overrides map lets the inspector tweak per-item severity and
+// trade on the review screen before Complete. Keyed by template_item_id
+// because that's the id the client has at the review stage (the
+// inspection_result id is a UUID the client already minted, but the
+// template_item_id is the stable handle the UI tracks per row).
+export type RaiseOverride = { severity?: 'critical' | 'major' | 'moderate' | 'minor'; trade?: string | null };
+
 export async function raiseDefectsFromSession(
   sessionId: string,
   key: string,
+  overrides?: Record<string, RaiseOverride>,
 ): Promise<Res<{ created: number; skipped: number }>> {
   if (!auth(key)) return { ok: false, error: 'Not authorised.' };
 
@@ -220,8 +228,12 @@ export async function raiseDefectsFromSession(
   let skipped = 0;
 
   for (const r of fails) {
-    const severity = deriveSeverity(r as any);
-    const trade = tradeByItem.get(r.template_item_id) ?? null;
+    // FMX-069: inspector override, keyed by template_item_id. Falls back
+    // to the derived severity + the template item's trade when the FM
+    // didn't tweak the row on the review screen.
+    const override = overrides?.[r.template_item_id as string] || {};
+    const severity = override.severity || deriveSeverity(r as any);
+    const trade = (override.trade !== undefined ? override.trade : tradeByItem.get(r.template_item_id)) ?? null;
     const inspector = session.inspector_name || '—';
     const descriptionParts: string[] = [
       `Auto-raised from inspection on ${(session.started_at || '').slice(0, 10)}.`,

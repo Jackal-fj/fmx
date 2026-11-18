@@ -1155,7 +1155,14 @@ Split complete. Seven stories below carry the work. FMX-052 and FMX-054 can star
 
 **Follow-ups:**
 
-- **FMX-069 (S)** — Inspector override before commit: review-screen row shows the derived severity + trade and lets the inspector tweak before "Complete inspection". Low priority — the defect detail page already lets them change these after-the-fact.
+- **FMX-069 (S)** — Done 2026-11-19.
+
+**Done notes — FMX-069 — Inspector override before commit:**
+
+- `raiseDefectsFromSession` signature gains an optional `overrides?: Record<template_item_id, { severity?, trade? }>`. When present, the per-fail-row severity and trade used by the defect insert come from the override; otherwise fall back to the existing `deriveSeverity` + `template_items.trade` logic. Idempotency preserved (still skipped if `defect_id` already set on the result).
+- `inspection.raiseDefects` queue handler payload accepts `overrides` and threads them through to the server action.
+- Runner's review screen: the plain "N items failed" banner is replaced by an editable "Will raise N defects" card. For each failing item it renders a two-column grid (Severity select / Trade free-text) prefilled from the derived values. Inspector tweaks any row before Close & sign; the overrides are packed into the enqueue payload on close (only non-default, failure-matching entries get sent).
+- Local `deriveSeverityLocal(item, draft)` mirrors the server's rating-first ladder so the review-screen default matches what the server would compute with no override.
 
 **AC**
 

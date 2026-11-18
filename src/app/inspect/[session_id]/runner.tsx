@@ -56,6 +56,21 @@ function emptyDraft(): Draft {
   return { answer_bool: null, answer_number: null, answer_text: '', photos: [], voice: null, failed: false };
 }
 
+// FMX-069: must match deriveSeverity in src/lib/field-capture/actions.ts.
+// Kept in sync by convention — rating-first ladder, yes_no fails major,
+// number fails major, text fails moderate.
+type Severity = 'critical' | 'major' | 'moderate' | 'minor';
+function deriveSeverityLocal(item: Item, d: Draft): Severity {
+  if (item.kind === 'rating' && typeof d.answer_number === 'number') {
+    if (d.answer_number <= 1) return 'critical';
+    if (d.answer_number === 2) return 'major';
+    return 'moderate';
+  }
+  if (item.kind === 'yes_no') return 'major';
+  if (item.kind === 'number') return 'major';
+  return 'moderate';
+}
+
 // Given a template item's fail_if and the user's current answer, decide
 // whether this item is a "fail" (auto-raised defect later in FMX-056).
 function computeFailed(item: Item, d: Draft): boolean {
@@ -104,6 +119,9 @@ export default function Runner({
   // Close-screen state (FMX-057)
   const [attendancePhoto, setAttendancePhoto] = useState<{ file: File; dataUrl: string } | null>(null);
   const [closeNoteInput, setCloseNoteInput] = useState('');
+  // FMX-069: per-template-item overrides for the auto-raised defects.
+  // Default values come from deriveSeverityLocal + the template's trade.
+  const [overrides, setOverrides] = useState<Record<string, { severity?: Severity; trade?: string | null }>>({});
   const [sigEmpty, setSigEmpty] = useState(true);
   const sigRef = useRef<SignaturePadHandle | null>(null);
   const attendanceInputRef = useRef<HTMLInputElement | null>(null);
@@ -247,8 +265,56 @@ export default function Runner({
           </div>
         )}
         {failures.length > 0 && (
-          <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
-            {failures.length} item{failures.length === 1 ? '' : 's'} failed. Jobs are not raised automatically yet (that's FMX-056); for now these show up in the session record.
+          <div className="mt-4 rounded-lg border bg-white overflow-hidden">
+            <div className="px-4 py-2 border-b bg-amber-50">
+              <h3 className="text-sm font-bold text-navy uppercase tracking-wide">
+                Will raise {failures.length} defect{failures.length === 1 ? '' : 's'}
+              </h3>
+              <p className="text-[11px] text-amber-900 mt-1">
+                Severity and trade are pre-set from the fail rule + template. Tweak any row before Close & sign.
+              </p>
+            </div>
+            <ul className="divide-y">
+              {failures.map(it => {
+                const d = drafts[it.id];
+                const o = overrides[it.id] || {};
+                const defaultSev = deriveSeverityLocal(it, d);
+                const defaultTrade = (it.trade || '') as string;
+                const currentSev = (o.severity || defaultSev) as Severity;
+                const currentTrade = (o.trade !== undefined ? (o.trade || '') : defaultTrade) as string;
+                return (
+                  <li key={it.id} className="px-4 py-3">
+                    <div className="text-sm text-navy font-medium mb-2">{it.question}</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <label className="text-[11px] uppercase tracking-wide text-muted">
+                        Severity
+                        <select
+                          value={currentSev}
+                          onChange={e => setOverrides(prev => ({ ...prev, [it.id]: { ...prev[it.id], severity: e.target.value as Severity } }))}
+                          className="w-full mt-1 rounded border border-gray-300 p-2 text-sm bg-white"
+                        >
+                          <option value="critical">Critical</option>
+                          <option value="major">Major</option>
+                          <option value="moderate">Moderate</option>
+                          <option value="minor">Minor</option>
+                        </select>
+                      </label>
+                      <label className="text-[11px] uppercase tracking-wide text-muted">
+                        Trade
+                        <input
+                          type="text"
+                          value={currentTrade}
+                          onChange={e => setOverrides(prev => ({ ...prev, [it.id]: { ...prev[it.id], trade: e.target.value.trim() || null } }))}
+                          placeholder={defaultTrade || 'e.g. Electrical'}
+                          maxLength={60}
+                          className="w-full mt-1 rounded border border-gray-300 p-2 text-sm bg-white"
+                        />
+                      </label>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         )}
         {err && <div className="mt-3 text-sm text-red-800">{err}</div>}
@@ -336,9 +402,21 @@ export default function Runner({
 
           await stageAttendancePhoto();
 
+          // FMX-069: only send overrides for items that actually failed +
+          // were touched (keeps the payload small and intent explicit).
+          const failedItemIds = new Set(items.filter(it => drafts[it.id]?.failed).map(it => it.id));
+          const clean: Record<string, { severity?: Severity; trade?: string | null }> = {};
+          for (const [id, o] of Object.entries(overrides)) {
+            if (!failedItemIds.has(id)) continue;
+            const row: { severity?: Severity; trade?: string | null } = {};
+            if (o.severity) row.severity = o.severity;
+            if (o.trade !== undefined) row.trade = o.trade;
+            if (Object.keys(row).length > 0) clean[id] = row;
+          }
           await enqueue('inspection.raiseDefects', {
             key: secretKey,
             session_id: sessionId,
+            overrides: Object.keys(clean).length > 0 ? clean : undefined,
           }, { dedupeKey: `inspection.raiseDefects.${sessionId}` });
         } catch (e: any) {
           setErr(`Could not close inspection: ${e?.message || e}`);
