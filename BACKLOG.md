@@ -1575,9 +1575,27 @@ Touched: `src/app/page.tsx`.
 
 ### [FMX-075] Client portal landing — portfolio snapshot
 
-- Type: story · Size: M · Status: idea · Part of: FMX-024 · Depends on: FMX-074
+- Type: story · Size: M · Status: done 2026-11-19 · Part of: FMX-024 · Depends on: FMX-074
 
-**AC** — `/client/[short_code]` renders: active agreements block (status badges, no dollar figures unless agreement says client sees them), properties list with address + open-defect count, open defects grouped by property with severity + status + photo thumbnails (read-only), resolved YTD count, service contracts, reports library (PDFs from the Reports page filtered to this client). No write actions. Mobile-first.
+**Done notes:**
+
+- **Header** — client name, "Read-only view · <token label> · as of <now>". No FM nav above it (FMX-074 already suppresses).
+- **Snapshot tiles (2-up mobile, 4-up desktop)** — Sites · Open items · Resolved this year · Active agreements. Open-items tile goes red if any item is critical, amber otherwise, green when zero.
+- **Properties block** — short_code · name · address · tenant name · open-item count per property.
+- **Work in progress block** — defects grouped by property, ordered by property with most open items first. Within each group: severity-ordered then most-recent-first. Each row shows defect number, title, logged date, trade (if tagged), severity badge, status badge, and up to 3 inline photo thumbnails. No descriptions (keeps the view scannable, and defect descriptions sometimes carry FM-side notes the client doesn't need).
+- **Agreements block** — code · status badge · type · name · start/end dates. Dollar figures withheld per AC; footer line reads "Agreement details, fees and payment terms sit with your FM — contact them for a current copy."
+- **Service contracts block** — active contracts only, contract name · discipline · frequency · property · provider · next service date.
+- **Reports block** — last 50 report runs filtered to (a) client-scope reports with `client_id = scope.client_id`, or (b) property-scope reports on a property owned by this client. A **Download** button on each row calls a new scoped server action.
+- **New scoped action `getClientReportDownloadUrl`** in `src/app/client/[short_code]/actions.ts` — validates the plaintext token through `resolveClientFromToken`, confirms the token's scope owns the report (by `client_id` or property ownership), then mints a 1-hour Supabase Storage signed URL. The admin `getReportDownloadUrl` still requires QUICK_ADD_SECRET — the two paths never cross.
+- **Server-side data scope** — every query filters by `scope.client_id`; the defects query intersects by property set so a tampered URL that reaches this page with the wrong `short_code` still cannot pull another client's data (and in practice can't reach here at all — the gate 404s on scope mismatch).
+- **Cookie-promotion** from FMX-074 preserved: the plaintext comes from `?t=` on first visit, then from the `fmx_client` cookie; the component passes it to the download button so each download can be scope-checked server-side.
+
+**Deliberate scope cuts:**
+
+- No per-defect detail page for the client viewer yet. The list is enough for Irene to scan what's live; if a specific item needs discussion, she calls Carl.
+- No historic trend (resolved by month, inspection pass rate) — comes when the FM Performance Report-style summary is wired through here.
+- No dollar figures anywhere on the page. If a client asks to see them, add a per-token `visible_fields` flag rather than a global toggle.
+- No audit log of page views or downloads yet — that's FMX-081.
 
 ---
 
