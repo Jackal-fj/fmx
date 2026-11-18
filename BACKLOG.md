@@ -1090,6 +1090,25 @@ Split complete. Seven stories below carry the work. FMX-052 and FMX-054 can star
 
 **Deferred:** `.docx` / `.xlsx` / `.pdf` file upload — raised as **FMX-073 (S)**. The paste-text pass covers the practical Carl workflow: open the Word doc, select the list, copy, paste.
 
+---
+
+### [FMX-073] Template import — file upload (.docx / .xlsx / .csv / .txt)
+
+- Type: story · Size: S · Status: done 2026-11-19 · Follows: FMX-065
+
+**Done notes:**
+
+- `mammoth@^1.13.0` + `xlsx@^0.18.5` added as deps. Pure JS, no native bindings.
+- New `/api/inspection-template-parse` route — accepts a file + the secret key, returns `{ lines: string[], source }`. Dispatch:
+  - `.docx` → `mammoth.extractRawText({ buffer })` → split lines + trim + drop blanks
+  - `.xlsx` / `.xls` / `.csv` → `XLSX.sheet_to_json(header: 1)` on the first sheet → first non-empty cell of each row
+  - `.txt` / `.md` / `text/*` → UTF-8 decode → split lines
+  - 10 MB cap, secret-key gated, unsupported types return 415
+- Import form gets a muted "…or upload a file" card above the pastebox. On file pick, POSTs to the endpoint, **appends** parsed lines to the existing pastebox (so Carl can mix multiple sources), auto-fills the template Name from the filename when empty. Shows "Parsing…" during the round-trip and "✓ Loaded from <filename>" after.
+- Rest of the flow unchanged — FMX-065's bullet/numbering/CSV stripping + preview + bulk create action handles everything from there.
+
+**Deferred:** `.pdf` — needs `pdf-parse` or similar, which bundles optional native paths. Raise if Carl actually has PDF-only checklists.
+
 **AC**
 
 - New tables: `inspection_templates` (header + metadata) + `inspection_template_items` (ordered checklist items, each with: question, kind (yes-no / rating / number / text), required, photo-required flag, fail-if condition)

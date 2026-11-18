@@ -43,6 +43,42 @@ export default function ImportForm({ secretKey }: { secretKey: string }) {
   const [text, setText] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  // FMX-073: file upload — parsed lines get dropped into `text` so the
+  // existing paste-text parser handles them unchanged.
+  const [fileLoading, setFileLoading] = useState(false);
+  const [fileSource, setFileSource] = useState<string | null>(null);
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    setErr(null);
+    setFileLoading(true);
+    setFileSource(null);
+    try {
+      const fd = new FormData();
+      fd.set('key', secretKey);
+      fd.append('file', f);
+      const res = await fetch('/api/inspection-template-parse', { method: 'POST', body: fd });
+      const body = await res.json();
+      if (!res.ok) { setErr(body?.error || `Parse failed (${res.status})`); return; }
+      const lines: string[] = Array.isArray(body.lines) ? body.lines : [];
+      if (lines.length === 0) { setErr('No text lines found in that file.'); return; }
+      // If the pastebox already has content, append rather than replace —
+      // Carl might want to combine multiple sources.
+      setText(prev => (prev.trim() ? prev.trim() + '\n' : '') + lines.join('\n'));
+      setFileSource(f.name);
+      // Name prefill: if empty, derive from the filename.
+      if (!name.trim()) {
+        const base = f.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
+        setName(base.slice(0, 200));
+      }
+    } catch (e: any) {
+      setErr(`Upload failed: ${e?.message || e}`);
+    } finally {
+      setFileLoading(false);
+    }
+  }
 
   const parsed = useMemo(() => parseItems(text), [text]);
 
@@ -100,6 +136,29 @@ export default function ImportForm({ secretKey }: { secretKey: string }) {
             className="w-full rounded border border-gray-300 p-3 text-base bg-white"
           />
         </div>
+      </div>
+
+      {/* FMX-073: optional file upload. Parsed lines merge into the pastebox. */}
+      <div className="rounded-md border border-gray-300 bg-gray-50 p-3">
+        <label className="block text-[11px] uppercase tracking-wide text-muted mb-2">
+          …or upload a file
+        </label>
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <input
+            type="file"
+            accept=".docx,.xlsx,.xls,.csv,.txt,.md,text/plain"
+            onChange={onFile}
+            disabled={fileLoading}
+            className="text-sm"
+          />
+          {fileLoading && <span className="text-xs text-muted">Parsing…</span>}
+          {fileSource && !fileLoading && (
+            <span className="text-xs text-green-700">✓ Loaded from {fileSource}</span>
+          )}
+        </div>
+        <p className="text-[11px] text-muted mt-2">
+          Supports Word (.docx), Excel (.xlsx / .xls), CSV and plain text. Lines append to the pastebox below — mix sources freely.
+        </p>
       </div>
 
       <div>
