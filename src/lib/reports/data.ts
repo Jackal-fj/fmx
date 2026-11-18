@@ -54,6 +54,7 @@ export type OpenDefect = {
   description: string;
   photo_urls: string[];
   days_open: number | null;
+  trade: string | null;         // FMX-039: feeds per-property by-trade breakdown
 };
 
 export type ComplianceEvent = {
@@ -83,6 +84,7 @@ export type ResolvedDefect = {
   space: string;
   resolved_at: string;          // 'YYYY-MM-DD'
   resolution_notes: string | null;
+  trade: string | null;         // FMX-039
 };
 
 export type AssetSummaryRow = {
@@ -131,6 +133,10 @@ export type CapitalWork = {
   in_report_month: boolean;     // true if install_date falls in the reporting month
 };
 
+// FMX-039: "N open" / "K resolved this month" rolled up by trade for the
+// FM Performance Report breakdown blocks.
+export type TradeCount = { trade: string; count: number };
+
 // FMX-058: inspection runs completed in the reporting month. Powers the
 // Monthly spotlight bullets that read directly from field capture.
 export type InspectionRun = {
@@ -161,6 +167,8 @@ export type ReportSnapshot = {
   ytdPortfolio: YtdDefectCounts;                    // portfolio rollup
   capitalWorks: CapitalWork[];                      // all installed assets with install_date <= month-end
   inspectionsThisMonth: InspectionRun[];            // FMX-058 — sessions completed in the reporting month
+  openByTrade: TradeCount[];                        // FMX-039 — open at month-end, keyed by trade
+  resolvedByTradeThisMonth: TradeCount[];           // FMX-039 — resolved in the reporting month, keyed by trade
   reportMonth: string;                // YYYY-MM that this snapshot represents
   asOfDate: string;                   // ISO date at month-end used as the "as-at" reference for all queries
 };
@@ -269,8 +277,9 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF', repor
       .lte('identified_at', asOfIso),
     // "Open at month-end" = identified before month-end AND
     //    (not resolved yet OR resolved after month-end)
+    // Pulls trade for the FMX-039 by-trade breakdown.
     sb.from('defects')
-      .select(`defect_number, title, description, severity, status, identified_at, resolved_at, photo_urls,
+      .select(`defect_number, title, description, severity, status, identified_at, resolved_at, photo_urls, trade,
         property:property_id ( short_code, client_id ),
         space:space_id ( name )`)
       .lte('identified_at', asOfIso)
@@ -367,6 +376,7 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF', repor
       description: d.description || '',
       photo_urls: Array.isArray(d.photo_urls) ? d.photo_urls : [],
       days_open: daysBetween(d.identified_at, monthEnd),
+      trade: (d.trade || null) as string | null,
     }));
 
   // --- Resolved this month per property (resolved_at in [monthStart, monthEnd))
@@ -375,7 +385,7 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF', repor
   const { data: resolvedRows } = await sb
     .from('defects')
     .select(`
-      defect_number, title, severity, resolved_at, resolution_notes,
+      defect_number, title, severity, resolved_at, resolution_notes, trade,
       property:property_id ( short_code, client_id ),
       space:space_id ( name )
     `)
@@ -398,6 +408,7 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF', repor
       space: r.space?.name || '-',
       resolved_at: (r.resolved_at || '').slice(0, 10),
       resolution_notes: r.resolution_notes,
+      trade: (r.trade || null) as string | null,
     });
   }
   const resolvedThisMonth: ResolvedThisMonth[] = Object.entries(resolvedMap)
@@ -664,6 +675,38 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF', repor
     }
   }
 
+  // --- FMX-039: by-trade breakdowns ---------------------------------------
+  // "Open at month-end by trade" uses openDefectRows (already filtered to
+  // this client, carries trade now). "Resolved this month by trade" uses
+  // resolvedRows (already filtered to this month + this client). Untagged
+  // rows bucket to "— Untagged" so the FM can see the data-quality gap.
+  function rollupByTrade(rows: Array<{ trade: string | null }>): TradeCount[] {
+    const counts = new Map<string, number>();
+    for (const r of rows) {
+      const t = (r.trade || '').trim() || '— Untagged';
+      counts.set(t, (counts.get(t) || 0) + 1);
+    }
+    const out = Array.from(counts.entries()).map(([trade, count]) => ({ trade, count }));
+    // Sort by count desc; the untagged bucket sinks to the bottom so the
+    // data-quality gap is visible without crowding the tagged work above.
+    out.sort((a, b) => {
+      if (a.trade === '— Untagged') return 1;
+      if (b.trade === '— Untagged') return -1;
+      return b.count - a.count;
+    });
+    return out;
+  }
+
+  const openForTradeRollup = (openDefectRows || [])
+    .filter((d: any) => d.property && d.property.client_id === clientId)
+    .map((d: any) => ({ trade: d.trade as string | null }));
+  const openByTrade: TradeCount[] = rollupByTrade(openForTradeRollup);
+
+  const resolvedForTradeRollup = (resolvedRows || [])
+    .filter((r: any) => r.property && r.property.client_id === clientId)
+    .map((r: any) => ({ trade: r.trade as string | null }));
+  const resolvedByTradeThisMonth: TradeCount[] = rollupByTrade(resolvedForTradeRollup);
+
   return {
     properties,
     fcas,
@@ -679,6 +722,8 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF', repor
     ytdPortfolio,
     capitalWorks,
     inspectionsThisMonth,
+    openByTrade,
+    resolvedByTradeThisMonth,
     reportMonth: month,
     asOfDate: asOfIso.slice(0, 10),
   };

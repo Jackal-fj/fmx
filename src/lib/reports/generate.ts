@@ -16,7 +16,7 @@ import {
 import type {
   ReportSnapshot, Property, Fca, DefectCount, OpenDefect,
   ServiceContractRow, AssetSummaryRow, ComplianceEvent, ResolvedDefect,
-  YtdDefectCounts, CapitalWork,
+  YtdDefectCounts, CapitalWork, TradeCount,
 } from './data';
 
 const COMPANY = 'Commercial Management Solutions Pte Limited';
@@ -752,6 +752,72 @@ function portfolioSnapshotTable(snap: ReportSnapshot): Table {
   return table([header, ...rows, totalRow], cw);
 }
 
+// -- 5b. Trade breakdown (FMX-039) ----------------------------------------
+// Two side-by-side tables: Open at month-end by trade, Resolved this month
+// by trade. Renders under the Portfolio snapshot and above the Monthly
+// spotlight. Untagged bucket sinks to the bottom in each list so the
+// data-quality gap is visible.
+function tradeBreakdown(open: TradeCount[], resolved: TradeCount[]): (Paragraph | Table)[] {
+  if (open.length === 0 && resolved.length === 0) return [];
+  const half = Math.floor(CONTENT_W / 2) - 60;
+  const openCw  = [half - 1000, 1000];
+  const resCw   = [half - 1000, 1000];
+
+  function oneTable(title: string, rows: TradeCount[], cw: number[]): Table {
+    const header = new TableRow({
+      tableHeader: true,
+      children: [
+        cell(title,  { bold: true, fill: SHADE_HEADER, width: cw[0], color: HEADING_COLOR }),
+        cell('Count', { bold: true, fill: SHADE_HEADER, width: cw[1], align: AlignmentType.CENTER, color: HEADING_COLOR }),
+      ],
+    });
+    const total = rows.reduce((a, r) => a + r.count, 0);
+    const body = rows.map((r, i) => {
+      const fill = i % 2 ? SHADE_ROW_ALT : undefined;
+      return new TableRow({
+        children: [
+          cell(r.trade,            { width: cw[0], size: 18, fill, color: r.trade === '— Untagged' ? COLOR_MUTED : COLOR_TEXT }),
+          cell(String(r.count),    { width: cw[1], size: 18, align: AlignmentType.CENTER, fill }),
+        ],
+      });
+    });
+    const totalRow = new TableRow({
+      children: [
+        cell('Total', { width: cw[0], size: 18, bold: true, fill: SHADE_HEADER, color: HEADING_COLOR }),
+        cell(String(total), { width: cw[1], size: 18, bold: true, align: AlignmentType.CENTER, fill: SHADE_HEADER, color: HEADING_COLOR }),
+      ],
+    });
+    return table([header, ...(rows.length ? [...body, totalRow] : [new TableRow({
+      children: [
+        cell('—', { width: cw[0], size: 18, color: COLOR_MUTED, fill: SHADE_ROW_ALT }),
+        cell('0', { width: cw[1], size: 18, align: AlignmentType.CENTER, color: COLOR_MUTED, fill: SHADE_ROW_ALT }),
+      ],
+    })])], cw);
+  }
+
+  const openTable = oneTable('Open by trade', open, openCw);
+  const resTable  = oneTable('Resolved this month by trade', resolved, resCw);
+
+  // Side-by-side via a 1x2 outer table — keeps alignment tight on A4.
+  const outer = new TableRow({
+    children: [
+      new TableCell({
+        borders: { top: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }, bottom: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }, left: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }, right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' } },
+        width: { size: half + 60, type: WidthType.DXA },
+        margins: { top: 0, bottom: 0, left: 0, right: 120 },
+        children: [openTable],
+      }),
+      new TableCell({
+        borders: { top: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }, bottom: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }, left: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }, right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' } },
+        width: { size: half + 60, type: WidthType.DXA },
+        margins: { top: 0, bottom: 0, left: 120, right: 0 },
+        children: [resTable],
+      }),
+    ],
+  });
+  return [table([outer], [half + 60, half + 60])];
+}
+
 // -- 6. Monthly spotlight bullets (auto-derived) ---------------------------
 // Themes the month's activity. Hand-curated prose can be added later via an
 // editable notes table; for now derives from the data in-snapshot.
@@ -992,6 +1058,22 @@ async function propertyReport(prop: Property, snap: ReportSnapshot, reportMonth:
   const propContracts = snap.serviceContracts.filter(c => !c.short_code || c.short_code === prop.short_code);
   const propResolved = snap.resolvedDefects.filter(d => d.short_code === prop.short_code);
 
+  // FMX-039 per-property breakdowns — re-rollup from the already-filtered
+  // open and resolved lists so the property report mirrors the portfolio
+  // view without pulling extra data.
+  function rollup(rows: Array<{ trade: string | null | undefined }>): TradeCount[] {
+    const counts = new Map<string, number>();
+    for (const r of rows) {
+      const t = ((r as any).trade || '').trim() || '— Untagged';
+      counts.set(t, (counts.get(t) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([trade, count]) => ({ trade, count }))
+      .sort((a, b) => a.trade === '— Untagged' ? 1 : b.trade === '— Untagged' ? -1 : b.count - a.count);
+  }
+  const propOpenByTrade: TradeCount[] = rollup(propOpenDefects as any);
+  const propResolvedByTrade: TradeCount[] = rollup(propResolved as any);
+
   const headline = `${y.resolved_total} defect${y.resolved_total === 1 ? '' : 's'} resolved YTD, ${y.open_total} open at ${asOf}. ${propCaps.length} capital item${propCaps.length === 1 ? '' : 's'} installed. ${propContracts.filter(c => c.active).length} active service contract${propContracts.filter(c => c.active).length === 1 ? '' : 's'}.`;
 
   const children: any[] = [
@@ -1025,6 +1107,12 @@ async function propertyReport(prop: Property, snap: ReportSnapshot, reportMonth:
     // 5. PORTFOLIO SNAPSHOT (single-row, for this property)
     h2('Property snapshot - YTD and this month'),
     portfolioSnapshotTable({ ...snap, properties: [prop] } as ReportSnapshot),
+
+    // 5b. TRADE BREAKDOWN (property-scoped)
+    ...(((propOpenByTrade.length + propResolvedByTrade.length) > 0) ? [
+      h2('By trade'),
+      ...tradeBreakdown(propOpenByTrade, propResolvedByTrade),
+    ] : []),
 
     // 6. MONTHLY SPOTLIGHT
     h2(`${reportLabel} spotlight`),
@@ -1325,6 +1413,12 @@ async function portfolioReport(snap: ReportSnapshot, reportMonth: string): Promi
     // 5. PORTFOLIO SNAPSHOT
     h2('Portfolio snapshot - YTD and this month'),
     portfolioSnapshotTable(snap),
+
+    // 5b. TRADE BREAKDOWN (FMX-039)
+    ...((((snap as any).openByTrade?.length || 0) + ((snap as any).resolvedByTradeThisMonth?.length || 0) > 0) ? [
+      h2('By trade'),
+      ...tradeBreakdown((snap as any).openByTrade || [], (snap as any).resolvedByTradeThisMonth || []),
+    ] : []),
 
     // 6. MONTHLY SPOTLIGHT
     h2(`${reportLabel} spotlight`),

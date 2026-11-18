@@ -1285,7 +1285,14 @@ Even before translations land, extract every UI string to a single table (next-i
 
 ### [FMX-039] Platform-report trade breakdowns
 
-- Type: tech-debt · Size: XS · Status: next · Raised: 2026-11-17 · Follows: FMX-037
+- Type: tech-debt · Size: XS · Status: done 2026-11-18 · Raised: 2026-11-17 · Follows: FMX-037
+
+**Done notes:**
+
+- New `TradeCount` type on the snapshot. Snapshot now exposes `openByTrade` (open at month-end) and `resolvedByTradeThisMonth`, both scoped to the client's properties and sorted by count desc with an "— Untagged" bucket sunk to the bottom so data-quality gaps show without crowding tagged work.
+- Defect query selects extended with `trade`; `OpenDefect` and `ResolvedDefect` types gained a `trade` field.
+- **New report section — "By trade"** — side-by-side tables (Open by trade · Resolved this month by trade) rendered between Portfolio snapshot and Monthly spotlight. Each table shows Trade · Count, plus a Total row. Hides entirely when both lists are empty.
+- Portfolio and per-property report variants both carry the section. Per-property rollup re-computes from the already-filtered open + resolved lists so the property report mirrors the portfolio view without new queries.
 
 **AC**
 
