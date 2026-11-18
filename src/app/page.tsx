@@ -122,6 +122,7 @@ export default async function Dashboard() {
         <div className="mb-8">
           <AddDropdown
             items={[
+              { href: withKey('/inspect/new'), label: 'Inspection' },
               { href: withKey('/new-defect'),  label: 'Defect' },
               { href: withKey('/new-asset'),   label: 'Asset' },
               { href: withKey('/new-vendor'),  label: 'Vendor' },

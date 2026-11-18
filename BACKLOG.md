@@ -973,7 +973,26 @@ Split complete. Seven stories below carry the work. FMX-052 and FMX-054 can star
 
 ### [FMX-055] Checklist runner (one question per screen)
 
-- Type: story · Size: M · Status: next · Part of: FMX-042 · Depends on: FMX-054, FMX-046, FMX-048
+- Type: story · Size: M · Status: done 2026-11-18 · Part of: FMX-042 · Depends on: FMX-054, FMX-046, FMX-048
+
+**Done notes:** The hero-workflow loop is live end-to-end, minus auto-raise and close-with-evidence (FMX-056, FMX-057 — split out intentionally).
+
+- **Start screen** `/inspect/new` — pick template, (optional) property / asset, inspector name. Deep-link prefill via `?template=&property=&asset=` so FMX-053 scanner lands crews straight here. Scope-aware required fields (property-scoped template → property is required).
+- **Runner** `/inspect/[session_id]` — one question per screen, big answer controls (Yes/No pills, 1-5 rating buttons, numeric pad input, text box). Progress bar above. Thumb-zone action bar (Back · Skip · Next →). Required items block skip and block the complete button.
+- **Per-item photos** — `+ Photo` opens rear camera via `capture="environment"`, batched upload, client-side JPEG compression (2000px / 0.82 quality). New upload endpoint `/api/inspection-photo` writes to the shared `defect-photos` bucket under `inspection/<session>/<item>/...`.
+- **Fail detection** runs client-side against the item's `fail_if` rule — pills light up amber on the failing answer and the result row saves with `failed = true` + `failure_reason`. (Auto-job creation is FMX-056; for now these just flag.)
+- **Idempotent save** — every question commits to `inspection_results` on Next via `recordResult` (FMX-048), each with a fresh `crypto.randomUUID()`. Back-then-Next doesn't re-upload photos because the client photo buffer clears after a successful save.
+- **Review screen** at the end — tappable list of every item with a status glyph (✓ green · missing red · fail amber). Jump back to fix anything.
+- **Complete** — `completeSession` stamps `completed_at`. Signature + attendance photo deferred to FMX-057.
+- **Dashboard + Add** gained an **Inspection** entry so a new run is 2 taps from anywhere.
+- **New property-id helper** `/api/property-id?code=XX` — tiny lookup used by the start form to resolve short_code → uuid.
+
+**Visible but deferred:**
+
+- Voice notes per item — MediaRecorder works but needs polish. Raised as **FMX-067 (S)**.
+- Offline — writes still go straight to the server; migrating `recordResult` + photo upload onto the FMX-046 queue is **FMX-068 (S)** so an offline inspection survives.
+- Auto-job on fail — **FMX-056** (next in queue).
+- Signature + attendance photo on complete — **FMX-057**.
 
 **AC**
 
