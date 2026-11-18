@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { unstable_noStore as noStore } from 'next/cache';
 import { supabaseServer } from '@/lib/supabase';
 import Badge, { ratingTone } from '@/components/badge';
+import DefaultTemplatePicker from '@/components/default-template-picker';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -35,7 +36,7 @@ export default async function AssetDetail({
       id, name, asset_code, asset_type, make, model, serial_number,
       install_date, warranty_expiry_date, service_interval_months,
       last_serviced_at, next_service_due_at, current_condition,
-      replacement_cost_fjd, notes, active, photo_urls,
+      replacement_cost_fjd, notes, active, photo_urls, default_inspection_template_id,
       created_at, updated_at,
       property:property_id ( id, short_code, name ),
       space:space_id ( name, short_code, space_type )
@@ -58,15 +59,23 @@ export default async function AssetDetail({
   const space = (asset.space as unknown) as { name: string; short_code: string; space_type: string } | null;
   const photos: string[] = Array.isArray(asset.photo_urls) ? asset.photo_urls : [];
 
-  // service history
-  const { data: events } = await supabaseServer
-    .from('asset_service_events')
-    .select(`
-      id, serviced_at, serviced_by, condition_before, condition_after, notes, photo_urls, source, event_type,
-      provider:provider_id ( name, trade )
-    `)
-    .eq('asset_id', asset.id)
-    .order('serviced_at', { ascending: false });
+  // service history + available inspection templates for the FMX-063 picker
+  const [{ data: events }, { data: templates }] = await Promise.all([
+    supabaseServer
+      .from('asset_service_events')
+      .select(`
+        id, serviced_at, serviced_by, condition_before, condition_after, notes, photo_urls, source, event_type,
+        provider:provider_id ( name, trade )
+      `)
+      .eq('asset_id', asset.id)
+      .order('serviced_at', { ascending: false }),
+    supabaseServer
+      .from('inspection_templates')
+      .select('id, name')
+      .eq('active', true)
+      .in('scope', ['asset', 'any'])
+      .order('name'),
+  ]);
 
   return (
     <div className="max-w-3xl">
@@ -114,6 +123,21 @@ export default async function AssetDetail({
             href={`/service-log/${asset.id}?key=${encodeURIComponent(key)}`}
             className="text-xs px-3 py-1.5 rounded-md bg-navy text-white"
           >Log service event</Link>
+        </div>
+      )}
+
+      {/* FMX-063 / FMX-064 — default inspection template + Start button */}
+      {editEnabled && (
+        <div className="mb-6">
+          <DefaultTemplatePicker
+            target="asset"
+            targetId={asset.id}
+            current={asset.default_inspection_template_id || null}
+            templates={(templates || []) as any}
+            secretKey={key}
+            startHrefPrefix="/inspect/new?template="
+            startExtraQs={`&asset=${encodeURIComponent(asset.id)}${property ? `&property=${encodeURIComponent(property.short_code)}` : ''}`}
+          />
         </div>
       )}
 

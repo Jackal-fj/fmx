@@ -724,6 +724,22 @@ These are each S-sized — the pattern is: write a thin server-action wrapper th
 
 ---
 
+### [FMX-063] Default inspection template picker on property + asset
+
+- Type: story · Size: XS · Status: done 2026-11-18 · Follows: FMX-054
+
+**Done notes:** Two new server actions in `src/app/inspections/assignment-actions.ts`: `setPropertyDefaultTemplate(shortCode, templateId, key)` + `setAssetDefaultTemplate(id, templateId, key)` — both write to the FKs added by the FMX-054 migration. Shared `<DefaultTemplatePicker/>` client component mounted on both the property hub (`/properties/[code]`) and the asset detail (`/assets/[id]`) pages. When no template is assigned it shows the picker; when assigned it collapses to a one-row card with the template name + Change link.
+
+---
+
+### [FMX-064] Scanner → Start-inspection shortcut
+
+- Type: story · Size: S · Status: done 2026-11-18 · Follows: FMX-054, FMX-063
+
+**Done notes:** Same `<DefaultTemplatePicker/>` renders a primary **Start inspection →** button whenever a default template is set. Scanning a property or asset QR (FMX-053) now lands on a page that's **one more tap** to the FMX-055 checklist runner — the strategy note's "Scan → Check → Snap → Done → Report" loop is now a tight 3-tap physical workflow from label to first question. The Start link prefills `/inspect/new?template=<id>&property=<short_code>` (or `&asset=<id>&property=<short_code>` for asset-scoped runs) so the New Session form opens with the right scope already picked.
+
+---
+
 ### [FMX-068] Offline wiring for inspection writes
 
 - Type: story · Size: M · Status: done 2026-11-18 (Phase A) · Part of: FMX-055 / FMX-046 follow-ups
@@ -1025,8 +1041,8 @@ Split complete. Seven stories below carry the work. FMX-052 and FMX-054 can star
 
 **Follow-ups raised:**
 
-- **FMX-063** — assignment pickers: on the property page and asset detail page, a "Default inspection" select that writes `default_inspection_template_id`. XS.
-- **FMX-064** — scanner integration: when a scan resolves to a property/asset with a default template, offer "Start inspection" on landing. S.
+- **FMX-063** — Done 2026-11-18. See entry below.
+- **FMX-064** — Done 2026-11-18. See entry below.
 - **FMX-065** — import from Word/PDF checklist (SafetyCulture-style template upload). M — the strategy note flagged this as a day-one adoption lever.
 
 **AC**

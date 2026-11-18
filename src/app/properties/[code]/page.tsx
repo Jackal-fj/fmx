@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { supabaseServer } from '@/lib/supabase';
 import Badge, { ratingTone, severityTone } from '@/components/badge';
+import DefaultTemplatePicker from '@/components/default-template-picker';
 import { unstable_noStore as noStore } from 'next/cache';
 
 export const dynamic = 'force-dynamic';
@@ -28,12 +29,15 @@ export default async function PropertyDetail({ params }: { params: { code: strin
     { data: defects },
     { data: assets },
     { data: contracts },
+    { data: templates },
   ] = await Promise.all([
     sb.from('condition_assessments').select('*').eq('property_id', property.id).order('assessed_at', { ascending: false }),
     sb.from('defects').select('defect_number, title, severity, status, identified_at, description').eq('property_id', property.id).neq('status', 'draft').order('defect_number'),
     sb.from('assets').select('asset_code, name, asset_type, make, model, current_condition').eq('property_id', property.id).eq('active', true).order('asset_code'),
     sb.from('service_contracts').select('contract_name, frequency, fee_amount, fee_currency, next_service_date, active').eq('property_id', property.id).eq('active', true),
+    sb.from('inspection_templates').select('id, name').eq('active', true).in('scope', ['property', 'any']).order('name'),
   ]);
+  const quickAddKey = process.env.QUICK_ADD_SECRET || '';
 
   const latestFca = fcas?.[0];
   const open = (defects || []).filter(d => d.status === 'open' || d.status === 'work_ordered');
@@ -69,6 +73,21 @@ export default async function PropertyDetail({ params }: { params: { code: strin
             className="rounded-full border border-gray-300 text-navy text-sm font-semibold px-4 py-2 hover:border-navy">All defects</Link>
         </div>
       </div>
+
+      {/* FMX-063 / FMX-064 — default inspection template + Start button */}
+      {quickAddKey && (
+        <div className="mb-6">
+          <DefaultTemplatePicker
+            target="property"
+            targetId={property.short_code}
+            current={property.default_inspection_template_id || null}
+            templates={(templates || []) as any}
+            secretKey={quickAddKey}
+            startHrefPrefix="/inspect/new?template="
+            startExtraQs={`&property=${encodeURIComponent(property.short_code)}`}
+          />
+        </div>
+      )}
 
       {/* FCA */}
       <section className="mb-8">
