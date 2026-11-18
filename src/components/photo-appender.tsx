@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useTransition, useRef } from 'react';
-import { appendDefectPhotos } from '@/app/defects/[number]/actions';
+import { enqueue } from '@/lib/offline/queue';
+import { storeBlob } from '@/lib/offline/blobs';
 
 const MAX_PHOTOS = 10;
 const TARGET_MAX_PX = 2000;
@@ -96,19 +97,24 @@ export default function PhotoAppender({
       return;
     }
     setErr(null);
-    const fd = new FormData();
-    fd.set('defect_id', defectId);
-    fd.set('defect_number', defectNumber);
-    fd.set('key', secretKey);
-    for (const p of previews) fd.append('photos', p.file);
-
     startTransition(async () => {
-      const r = await appendDefectPhotos(fd);
-      if (!r.ok) {
-        setErr(r.error || 'Upload failed.');
-        return;
+      try {
+        // FMX-059: stage each blob locally then enqueue the append. The
+        // handler batches them back into the existing appendDefectPhotos
+        // FormData shape. Dedupe-keyed so a tap-happy Upload button
+        // doesn't fire duplicate batches.
+        const blobIds: string[] = [];
+        for (const p of previews) blobIds.push(await storeBlob(p.file));
+        await enqueue('defect.photos.append', {
+          key: secretKey,
+          defect_id: defectId,
+          defect_number: defectNumber,
+          blob_ids: blobIds,
+        }, { dedupeKey: `defect.photos.append.${defectId}.${Date.now()}` });
+        setPreviews([]);
+      } catch (e: any) {
+        setErr(e?.message || 'Upload failed.');
       }
-      setPreviews([]);
     });
   }
 

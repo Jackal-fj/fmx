@@ -787,7 +787,9 @@ These are each S-sized — the pattern is: write a thin server-action wrapper th
 
 ### [FMX-059] Migrate photo appender onto the write queue
 
-- Type: tech-debt · Size: S · Status: next · Follows: FMX-013, FMX-046
+- Type: tech-debt · Size: S · Status: done 2026-11-18 · Follows: FMX-013, FMX-046
+
+**Done notes:** `PhotoAppender` (defect detail page) now stages each compressed photo to Dexie via `storeBlob()` then enqueues `defect.photos.append` with the batch of `blob_ids`. Handler rebuilds the FormData the existing `appendDefectPhotos` action expects, reads each blob, submits, and evicts on ACK. Offline-safe — defect photos captured on-site survive airplane mode the same way inspection photos do.
 
 **AC**
 
@@ -800,7 +802,9 @@ These are each S-sized — the pattern is: write a thin server-action wrapper th
 
 ### [FMX-060] Migrate inline trade editor onto the write queue
 
-- Type: tech-debt · Size: XS · Status: next · Follows: FMX-037, FMX-046
+- Type: tech-debt · Size: XS · Status: done 2026-11-18 · Follows: FMX-037, FMX-046
+
+**Done notes:** `TradeEditor` now `enqueue('defect.trade.set', { defect_number, trade, key }, { dedupeKey: 'defect.trade.<number>' })` on save instead of awaiting the server action. Last edit per defect wins thanks to the dedupe. Chip closes optimistically.
 
 **AC**
 
@@ -824,7 +828,9 @@ These are each S-sized — the pattern is: write a thin server-action wrapper th
 
 ### [FMX-062] Migrate agreement editor onto the write queue
 
-- Type: tech-debt · Size: XS · Status: next · Follows: FMX-026, FMX-046
+- Type: tech-debt · Size: XS · Status: done 2026-11-18 · Follows: FMX-026, FMX-046
+
+**Done notes:** `AgreementEditor` save now enqueues `agreement.update` with `dedupeKey = agreement.update.<agreement_id>` so rapid save clicks coalesce to one op. Redirect back to the view URL happens optimistically; the handler drains in the background.
 
 **AC**
 

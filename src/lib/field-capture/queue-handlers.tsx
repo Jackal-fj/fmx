@@ -20,6 +20,9 @@ import {
   attachPhotoToResult,
   attachAttendancePhoto,
 } from './actions';
+// FMX-059/060/062: also wire the existing defect + agreement write paths.
+import { setDefectTrade, appendDefectPhotos } from '@/app/defects/[number]/actions';
+import { updateAgreement } from '@/app/clients/[code]/agreements/[agreement_code]/actions';
 import type {
   InspectionResult,
   ScanEvent,
@@ -107,10 +110,59 @@ function registerAll() {
     // Local blob no longer needed.
     await deleteBlob(p.blob_id);
   });
+
+  // FMX-060: defect inline trade edit. Dedupe at the call site ensures the
+  // last edit per defect wins.
+  registerHandler('defect.trade.set', async (p: DefectTradePayload) => {
+    const r = await setDefectTrade(p.defect_number, p.trade, p.key);
+    if (!r.ok) throw new Error(r.error || 'trade save failed');
+  });
+
+  // FMX-062: agreement editor. One op per save; dedupe by agreement code.
+  registerHandler('agreement.update', async (p: AgreementUpdatePayload) => {
+    const r = await updateAgreement(p.agreement_id, p.client_short_code, p.agreement_code, p.patch, p.key);
+    if (!r.ok) throw new Error(r.error || 'agreement save failed');
+  });
+
+  // FMX-059: defect photo appender. Blobs stored locally via FMX-072's
+  // helpers; handler reads each, rebuilds a FormData batch, hands it to
+  // appendDefectPhotos (which already does the upload + append). Idempotent:
+  // appendDefectPhotos appends on top of whatever is there, so a retry just
+  // adds the same URL twice at worst. The handler tolerates that by evicting
+  // the blob after success.
+  registerHandler('defect.photos.append', async (p: DefectPhotosPayload) => {
+    const fd = new FormData();
+    fd.set('defect_id', p.defect_id);
+    fd.set('defect_number', p.defect_number);
+    fd.set('key', p.key);
+    const kept: string[] = [];
+    for (const blobId of p.blob_ids) {
+      const b = await getBlob(blobId);
+      if (!b) continue;
+      fd.append('photos', new File([b], `${blobId}.jpg`, { type: b.type || 'image/jpeg' }));
+      kept.push(blobId);
+    }
+    if (kept.length === 0) return;   // nothing to send; treat as done
+    const r = await appendDefectPhotos(fd);
+    if (!r.ok) throw new Error(r.error || 'append failed');
+    for (const blobId of kept) await deleteBlob(blobId);
+  });
 }
 
 type PhotoUploadPayload = { key: string; blob_id: string; session_id: string }
   & ({ target: 'result'; result_id: string } | { target: 'attendance'; result_id?: never });
+
+type DefectTradePayload = { key: string; defect_number: string; trade: string };
+
+type DefectPhotosPayload = { key: string; defect_id: string; defect_number: string; blob_ids: string[] };
+
+type AgreementUpdatePayload = {
+  key: string;
+  agreement_id: string;
+  client_short_code: string;
+  agreement_code: string;
+  patch: Record<string, unknown>;
+};
 
 // Mount in the root layout so the handlers are live before any
 // field-capture action is enqueued.

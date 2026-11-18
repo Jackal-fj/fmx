@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { updateAgreement } from './actions';
+import { enqueue } from '@/lib/offline/queue';
 
 type Agreement = {
   id: string;
@@ -124,13 +124,21 @@ export default function AgreementEditor({
     };
 
     startTransition(async () => {
-      const r = await updateAgreement(agreement.id, clientShortCode, agreement.agreement_code, patch, secretKey);
-      if (!r.ok) {
-        setErr(r.error || 'Save failed.');
-        return;
+      try {
+        // FMX-062: enqueue so edits made offline survive. Dedupe by the
+        // agreement id so a flurry of save clicks coalesces.
+        await enqueue('agreement.update', {
+          key: secretKey,
+          agreement_id: agreement.id,
+          client_short_code: clientShortCode,
+          agreement_code: agreement.agreement_code,
+          patch,
+        }, { dedupeKey: `agreement.update.${agreement.id}` });
+        router.replace(`/clients/${clientShortCode}/agreements/${encodeURIComponent(agreement.agreement_code)}`);
+        router.refresh();
+      } catch (e: any) {
+        setErr(e?.message || 'Save failed.');
       }
-      router.replace(`/clients/${clientShortCode}/agreements/${encodeURIComponent(agreement.agreement_code)}`);
-      router.refresh();
     });
   }
 

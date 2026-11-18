@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition, useRef, useEffect } from 'react';
-import { setDefectTrade } from './actions';
+import { enqueue } from '@/lib/offline/queue';
 
 export default function TradeEditor({
   defectNumber,
@@ -25,9 +25,18 @@ export default function TradeEditor({
   function save() {
     setErr(null);
     startTransition(async () => {
-      const r = await setDefectTrade(defectNumber, value, secretKey);
-      if (!r.ok) setErr(r.error || 'Save failed');
-      else setEditing(false);
+      try {
+        // FMX-060: enqueue so edits made offline survive.
+        // Dedupe by defect_number so rapid edits coalesce to the last one.
+        await enqueue('defect.trade.set', {
+          key: secretKey,
+          defect_number: defectNumber,
+          trade: value,
+        }, { dedupeKey: `defect.trade.${defectNumber}` });
+        setEditing(false);
+      } catch (e: any) {
+        setErr(e?.message || 'Save failed');
+      }
     });
   }
 
