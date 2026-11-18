@@ -130,6 +130,144 @@ export async function recordScan(payload: ScanEvent, key: string): Promise<Res> 
   return { ok: true };
 }
 
+// ---- fail → auto-raise defects from a session (FMX-056) ----------------
+//
+// On complete, scan the session's results for `failed = true` rows and
+// create one `defect` per failed row that hasn't already been raised.
+// Each new defect:
+//   - title       = item question (prefixed with FAIL)
+//   - description = failure reason + inspector text answer + session ref
+//   - severity    = mapped from fail signal (critical for rating<2, major default for yes_no fails, moderate otherwise)
+//   - trade       = template item's trade (falls back to NULL — Carl tags later via FMX-037)
+//   - property_id = session's property_id
+//   - photo_urls  = carried over from the failed result row
+//   - status      = 'open'
+// The new defect's id is backfilled onto `inspection_results.defect_id`
+// so the audit trail round-trips. Idempotent: results that already carry
+// a defect_id are skipped, so re-running after a partial failure is safe.
+
+function deriveSeverity(result: {
+  kind: string;
+  answer_bool: boolean | null;
+  answer_number: number | null;
+  failure_reason: string | null;
+}): 'critical' | 'major' | 'moderate' | 'minor' {
+  if (result.kind === 'rating' && typeof result.answer_number === 'number') {
+    if (result.answer_number <= 1) return 'critical';
+    if (result.answer_number === 2) return 'major';
+    return 'moderate';
+  }
+  if (result.kind === 'yes_no') return 'major';
+  if (result.kind === 'number') return 'major';
+  return 'moderate';
+}
+
+export async function raiseDefectsFromSession(
+  sessionId: string,
+  key: string,
+): Promise<Res<{ created: number; skipped: number }>> {
+  if (!auth(key)) return { ok: false, error: 'Not authorised.' };
+
+  // Session context — property for the defect assignment, plus session metadata.
+  const { data: session } = await supabaseServer
+    .from('inspection_sessions')
+    .select('id, property_id, asset_id, template_id, inspector_name, started_at')
+    .eq('id', sessionId)
+    .maybeSingle();
+  if (!session) return { ok: false, error: 'Session not found.' };
+  if (!session.property_id && !session.asset_id) {
+    // No anchor to hang a defect on. Not fatal — tell the caller so the UI
+    // can nudge the inspector to add scope on the session.
+    return { ok: true, data: { created: 0, skipped: 0 } };
+  }
+
+  // Failed results that don't already carry a defect_id — pull the whole row
+  // so we can copy photo_urls and the answer fields across.
+  const { data: fails } = await supabaseServer
+    .from('inspection_results')
+    .select('id, template_item_id, question, kind, answer_bool, answer_number, answer_text, photo_urls, failure_reason, defect_id, sort_order')
+    .eq('session_id', sessionId)
+    .eq('failed', true)
+    .is('defect_id', null)
+    .order('sort_order');
+  if (!fails || fails.length === 0) {
+    return { ok: true, data: { created: 0, skipped: 0 } };
+  }
+
+  // Grab the per-item trade overrides in one go.
+  const templateItemIds = Array.from(new Set(fails.map(f => f.template_item_id)));
+  const { data: items } = await supabaseServer
+    .from('inspection_template_items')
+    .select('id, trade')
+    .in('id', templateItemIds);
+  const tradeByItem = new Map((items || []).map((i: any) => [i.id, i.trade as string | null]));
+
+  // Fallback property_id for asset-only sessions: look up the asset's property.
+  let propertyId = session.property_id as string | null;
+  if (!propertyId && session.asset_id) {
+    const { data: a } = await supabaseServer
+      .from('assets')
+      .select('property_id')
+      .eq('id', session.asset_id)
+      .maybeSingle();
+    propertyId = (a?.property_id as string | null) ?? null;
+  }
+  if (!propertyId) {
+    return { ok: true, data: { created: 0, skipped: fails.length } };
+  }
+
+  let created = 0;
+  let skipped = 0;
+
+  for (const r of fails) {
+    const severity = deriveSeverity(r as any);
+    const trade = tradeByItem.get(r.template_item_id) ?? null;
+    const inspector = session.inspector_name || '—';
+    const descriptionParts: string[] = [
+      `Auto-raised from inspection on ${(session.started_at || '').slice(0, 10)}.`,
+      r.failure_reason ? `Fail reason: ${r.failure_reason}` : null,
+      r.answer_text ? `Answer: ${r.answer_text}` : null,
+      inspector !== '—' ? `Inspector: ${inspector}` : null,
+      `Inspection session: ${sessionId}`,
+    ].filter(Boolean) as string[];
+
+    const { data: inserted, error: insErr } = await supabaseServer
+      .from('defects')
+      .insert({
+        property_id: propertyId,
+        title: `FAIL — ${r.question}`.slice(0, 200),
+        description: descriptionParts.join('\n'),
+        severity,
+        status: 'open',
+        trade: trade || null,
+        photo_urls: Array.isArray(r.photo_urls) ? r.photo_urls : [],
+      })
+      .select('id, defect_number')
+      .single();
+    if (insErr || !inserted) {
+      skipped += 1;
+      continue;
+    }
+
+    const { error: patchErr } = await supabaseServer
+      .from('inspection_results')
+      .update({ defect_id: inserted.id })
+      .eq('id', r.id);
+    if (patchErr) {
+      // Defect was created; just couldn't backfill. Log and keep going —
+      // the result row loses its link but the defect still exists.
+      console.warn('raiseDefectsFromSession: backfill failed for result', r.id, patchErr.message);
+    }
+    created += 1;
+  }
+
+  // Bust caches on everything that reads the new defects.
+  revalidatePath('/defects');
+  revalidatePath('/');
+
+  return { ok: true, data: { created, skipped } };
+}
+
 // ---- readings -----------------------------------------------------------
 
 export async function recordReading(payload: Reading, key: string): Promise<Res> {

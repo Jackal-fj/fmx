@@ -1006,7 +1006,28 @@ Split complete. Seven stories below carry the work. FMX-052 and FMX-054 can star
 
 ### [FMX-056] Fail → auto-job pipeline
 
-- Type: story · Size: S · Status: next · Part of: FMX-042 · Depends on: FMX-055, FMX-021
+- Type: story · Size: S · Status: done 2026-11-18 · Part of: FMX-042 · Depends on: FMX-055, FMX-021
+
+**Done notes:**
+
+- New server action `raiseDefectsFromSession(sessionId, key)` in `src/lib/field-capture/actions.ts`:
+  - Pulls session + every `failed = true` result where `defect_id IS NULL`
+  - Resolves the property (session's `property_id`, or falls back to `asset.property_id` for asset-only sessions)
+  - Reads trade overrides from `inspection_template_items.trade` in one batch query
+  - Creates one `defect` per failed row (`status='open'`, title prefixed `FAIL — `, description captures the fail reason + inspector text + inspection session id + inspector name)
+  - Severity derivation: rating ≤ 1 → `critical`, rating = 2 → `major`, rating ≥ 3 → `moderate`; yes_no fail → `major`; number fail → `major`; text → `moderate`
+  - Copies `inspection_results.photo_urls` straight across to `defects.photo_urls`
+  - Backfills `inspection_results.defect_id` with the new defect's id so the audit trail round-trips
+  - **Idempotent** — rows that already have a `defect_id` are skipped, so partial failure + retry is safe
+  - `revalidatePath` hits `/defects` and `/`
+- **Runner wired** — Complete now calls `completeSession` then `raiseDefectsFromSession` in sequence. Non-fatal on error.
+- **Done screen enriched** — lists every auto-raised defect (number · severity · title) with one-tap links into each one. "No fail items — nothing raised" when the inspection was clean.
+
+**Scan → Check → Snap → Done → Report milestone:** with FMX-056 live, failed items from any inspection are now real defects in the register the moment the inspector hits Complete. The only piece still missing from the hero-workflow loop is the report pulling from capture (FMX-058) and signature/attendance on close (FMX-057).
+
+**Follow-ups:**
+
+- **FMX-069 (S)** — Inspector override before commit: review-screen row shows the derived severity + trade and lets the inspector tweak before "Complete inspection". Low priority — the defect detail page already lets them change these after-the-fact.
 
 **AC**
 

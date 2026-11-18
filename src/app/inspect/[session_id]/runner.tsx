@@ -3,7 +3,7 @@
 import { useState, useTransition, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { recordResult, completeSession } from '@/lib/field-capture/actions';
+import { recordResult, completeSession, raiseDefectsFromSession } from '@/lib/field-capture/actions';
 
 type Kind = 'yes_no' | 'rating' | 'number' | 'text';
 
@@ -79,7 +79,7 @@ function hasAnswer(item: Item, d: Draft): boolean {
 }
 
 export default function Runner({
-  sessionId, templateName, headerLine, items, initialResults, completed, secretKey,
+  sessionId, templateName, headerLine, items, initialResults, completed, raisedDefects, secretKey,
 }: {
   sessionId: string;
   templateName: string;
@@ -87,6 +87,7 @@ export default function Runner({
   items: Item[];
   initialResults: Array<{ template_item_id: string; answer_bool: boolean | null; answer_number: number | null; answer_text: string | null; photo_urls: string[] }>;
   completed: boolean;
+  raisedDefects: Array<{ defect_number: string; title: string; severity: string }>;
   secretKey: string;
 }) {
   const router = useRouter();
@@ -125,10 +126,37 @@ export default function Runner({
 
   if (completed) {
     return (
-      <div className="p-6 text-center space-y-3">
-        <h1 className="text-xl font-bold text-navy">{templateName}</h1>
-        <div className="text-sm text-muted">{headerLine}</div>
-        <div className="text-base text-green-700 font-semibold">✓ Inspection complete</div>
+      <div className="p-6 space-y-4">
+        <div className="text-center">
+          <h1 className="text-xl font-bold text-navy">{templateName}</h1>
+          <div className="text-sm text-muted">{headerLine}</div>
+          <div className="text-base text-green-700 font-semibold mt-3">✓ Inspection complete</div>
+        </div>
+
+        {raisedDefects.length > 0 ? (
+          <div className="rounded-lg border bg-white overflow-hidden">
+            <div className="px-4 py-2 border-b bg-gray-50 flex items-baseline justify-between">
+              <span className="text-sm font-bold text-navy uppercase tracking-wide">Defects raised</span>
+              <span className="text-[11px] text-muted">{raisedDefects.length}</span>
+            </div>
+            <ul className="divide-y">
+              {raisedDefects.map(d => (
+                <li key={d.defect_number}>
+                  <Link href={`/defects/${encodeURIComponent(d.defect_number)}`} className="block px-4 py-3 hover:bg-blue-50/40 min-h-[44px]">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs text-navy">{d.defect_number}</span>
+                      <span className="text-[10px] uppercase tracking-wide border border-gray-300 rounded px-1.5 py-0.5 text-muted">{d.severity}</span>
+                    </div>
+                    <div className="text-sm text-navy mt-1">{d.title}</div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <div className="text-center text-sm text-muted">No fail items — nothing raised.</div>
+        )}
+
         <div className="flex gap-2 justify-center">
           <Link href="/inspections" className="rounded-md border border-navy text-navy text-sm font-semibold px-4 py-2 min-h-[44px]">Templates</Link>
           <Link href="/" className="rounded-md bg-navy text-white text-sm font-semibold px-4 py-2 min-h-[44px]">Dashboard</Link>
@@ -319,6 +347,13 @@ export default function Runner({
     startTransition(async () => {
       const r = await completeSession(sessionId, { completed_at: new Date().toISOString() }, secretKey);
       if (!r.ok) { setErr(r.error || 'Could not complete session.'); return; }
+      // FMX-056: raise a defect per failed item. Run after completion so a
+      // mid-flight failure doesn't leave orphan jobs. Non-fatal on error.
+      const raise = await raiseDefectsFromSession(sessionId, secretKey);
+      if (raise.ok && raise.data && raise.data.created > 0) {
+        setErr(null);
+        // The done screen below will render; let the next refresh show the result.
+      }
       router.refresh();
     });
   }
