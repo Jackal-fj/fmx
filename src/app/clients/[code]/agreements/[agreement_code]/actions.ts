@@ -2,6 +2,7 @@
 
 import { supabaseServer } from '@/lib/supabase';
 import { revalidatePath } from 'next/cache';
+import { mergePatch, logConflicts } from '@/lib/offline/merge';
 
 // FMX-026: inline edit of an agreement from its view page. Only the fields the
 // read-only grid exposes can be set — nothing exotic. Server validates that
@@ -36,6 +37,12 @@ export async function updateAgreement(
   agreementCode: string,
   patch: Patch,
   secretKey: string,
+  // FMX-051: optional baseline — the `updated_at` the client saw when it
+  // staged the edit. When supplied, mergePatch flags any column whose
+  // server-side value moved on since that baseline. When omitted, the
+  // merge strategies still apply (concat / union / max / etc.) but no
+  // conflict rows are logged — no way to know they happened.
+  baselineUpdatedAt?: string | null,
 ): Promise<{ ok: boolean; error?: string }> {
   const required = process.env.QUICK_ADD_SECRET;
   if (!required || secretKey !== required) return { ok: false, error: 'Not authorised.' };
@@ -69,10 +76,33 @@ export async function updateAgreement(
     return { ok: false, error: 'Billing day must be 1–31.' };
   }
 
-  const toApply: Record<string, any> = {};
-  for (const [k, v] of Object.entries(patch)) {
-    toApply[k] = v;
+  // FMX-051: read the current row so the merge layer has a server-side
+  // baseline. Only the columns the patch touches are inspected, plus
+  // updated_at for the baseline check.
+  const touched = Object.keys(patch);
+  const columnsToRead = Array.from(new Set(['id', 'updated_at', ...touched]));
+  const { data: current, error: readErr } = await supabaseServer
+    .from('client_agreements')
+    .select(columnsToRead.join(','))
+    .eq('id', agreementId)
+    .maybeSingle();
+  if (readErr) return { ok: false, error: readErr.message };
+  if (!current) return { ok: false, error: 'Agreement not found.' };
+
+  const { toApply, conflicts } = mergePatch(
+    'client_agreements',
+    current as unknown as Record<string, unknown>,
+    patch as Record<string, unknown>,
+    baselineUpdatedAt ?? null,
+  );
+
+  // No-op merge — nothing changed server-side relative to current. Still
+  // bump updated_at so the client's follow-up refresh sees a stable write
+  // marker, but skip the UPDATE if there's truly nothing to apply.
+  if (Object.keys(toApply).length === 0) {
+    return { ok: true };
   }
+
   toApply.updated_at = new Date().toISOString();
 
   const { error } = await supabaseServer
@@ -80,6 +110,15 @@ export async function updateAgreement(
     .update(toApply)
     .eq('id', agreementId);
   if (error) return { ok: false, error: error.message };
+
+  // Best-effort — never blocks the UPDATE. See merge.ts logConflicts().
+  if (conflicts.length > 0) {
+    await logConflicts('client_agreements', agreementId, conflicts, {
+      client_short_code: clientShortCode,
+      agreement_code: agreementCode,
+      baseline_updated_at: baselineUpdatedAt ?? null,
+    });
+  }
 
   revalidatePath(`/clients/${clientShortCode}/agreements/${agreementCode}`);
   revalidatePath(`/clients/${clientShortCode}`);

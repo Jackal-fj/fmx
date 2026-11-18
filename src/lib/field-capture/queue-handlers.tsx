@@ -148,8 +148,17 @@ function registerAll() {
   });
 
   // FMX-062: agreement editor. One op per save; dedupe by agreement code.
+  // FMX-051: baseline_updated_at carries the row's `updated_at` as the
+  // client saw it at save time so the merge layer can detect server drift.
   registerHandler('agreement.update', async (p: AgreementUpdatePayload) => {
-    const r = await updateAgreement(p.agreement_id, p.client_short_code, p.agreement_code, p.patch, p.key);
+    const r = await updateAgreement(
+      p.agreement_id,
+      p.client_short_code,
+      p.agreement_code,
+      p.patch,
+      p.key,
+      p.baseline_updated_at,
+    );
     if (!r.ok) throw new Error(r.error || 'agreement save failed');
   });
 
@@ -238,6 +247,10 @@ type AgreementUpdatePayload = {
   client_short_code: string;
   agreement_code: string;
   patch: Record<string, unknown>;
+  // FMX-051: optional; omitted on older queued items from before this field
+  // was threaded through, which keeps backwards-compat with pending queue
+  // entries on devices that haven't reloaded since the deploy.
+  baseline_updated_at?: string | null;
 };
 
 type DefectStatusUpdatePayload = {

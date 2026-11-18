@@ -40,6 +40,7 @@ const TOP: NavItem[] = [
       { href: '/scan',        labelKey: 'nav.scan' },
       { href: '/labels',      labelKey: 'nav.labels' },
       { href: '/metrics',     labelKey: 'nav.metrics' },
+      { href: '/conflicts',   labelKey: 'nav.conflicts' },
     ],
   },
   { href: '/reports', labelKey: 'nav.reports' },

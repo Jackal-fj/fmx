@@ -39,6 +39,7 @@ export type Strings = {
     labels: string;
     scan: string;
     metrics: string;
+    conflicts: string;
   };
   add: {
     aria: string;
@@ -90,6 +91,7 @@ const en: Strings = {
     labels: 'QR Labels',
     scan: 'Scan',
     metrics: 'Metrics',
+    conflicts: 'Conflicts',
   },
   add: {
     aria: 'New record',

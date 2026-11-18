@@ -1003,7 +1003,24 @@ These are each S-sized — the pattern is: write a thin server-action wrapper th
 
 ### [FMX-051] Field-level merge resolver for shared records
 
-- Type: tech-debt · Size: M · Status: idea · Part of: FMX-041 · Depends on: FMX-046, FMX-048
+- Type: tech-debt · Size: M · Status: done 2026-11-19 · Part of: FMX-041 · Depends on: FMX-046, FMX-048
+
+**Done notes:**
+
+- **New `src/lib/offline/merge.ts`** — per-column merge-strategy registry (`lww` · `union` · `concat` · `max` · `min` · `latest_non_null`) with documented rules for `client_agreements`, `defects`, `assets`, `inspection_sessions`. Unlisted columns default to `lww`, matching pre-FMX-051 behaviour.
+- **Strategies documented in the registry itself** (per the AC): notes → `concat` (dated append), photo_urls → `union`, condition_rating → `max`, scalars → `lww`. Future tables just drop entries in `MERGE_RULES`.
+- **New `write_conflicts` table** (migration `fmx_051_write_conflicts`) — captures `table_name`, `row_id`, `column_name`, `strategy`, `server_value`, `incoming_value`, `merged_value`, `context`, `detected_at`, and the resolution fields.
+- **`updateAgreement` rewritten** — reads the current row, applies `mergePatch`, writes only the diff, and logs any conflicts to `write_conflicts` best-effort (never blocks the UPDATE).
+- **`baseline_updated_at` threaded** through the agreement editor → queue payload → server action. When the client's baseline is older than the server's `updated_at`, LWW overrides log a conflict; without the baseline, strategies still apply but no conflict rows are logged — backwards-compatible with pending queue entries from before this deploy.
+- **New `/conflicts` page under Resources** (nav + i18n updated, gated by QUICK_ADD_SECRET like `/metrics`). Shows unresolved conflicts with three-column server · client · merged diff and three resolve buttons: **Keep server · Keep client edit · Keep merged (OK)**. Resolved rows drop into a "Recently resolved" audit list below.
+- **`resolveConflict` server action** writes the chosen value back through a column-scoped UPDATE (bumps `updated_at`), stamps `resolution` + `resolved_at` on the conflict row.
+- **No silent discards** — design principle #9 holds: every anomaly the merge catches leaves evidence Carl can review.
+
+**Not done (deliberate scope cuts):**
+
+- `defect.trade.set`, `defect.status.update`, `defect.photos.append` still bypass the merge layer. Trade + status are already LWW by nature and photos are append-only, so merge value is low; wire them through when FMX-024 (multi-audience) lands and real concurrency arrives.
+- No `baseline_updated_at` on the Agreement type's row yet (Postgres default is now() on insert, update() bump in the action). Legacy rows with NULL `updated_at` still work — the merge just skips conflict detection for them.
+- `/conflicts` page shows raw JSON values for complex columns. When the first real-world conflict lands, swap in a column-aware renderer (array diff, text diff) — kept simple for now so the data model lands first.
 
 **AC**
 

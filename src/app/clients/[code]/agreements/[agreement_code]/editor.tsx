@@ -7,6 +7,11 @@ import { enqueue } from '@/lib/offline/queue';
 type Agreement = {
   id: string;
   agreement_code: string;
+  // FMX-051: threaded to the merge layer as the client's baseline, so a
+  // write that lands after a concurrent change logs a conflict instead of
+  // silently clobbering. Optional — older callers that don't pass it just
+  // skip conflict detection (strategies still apply).
+  updated_at?: string | null;
   name: string;
   agreement_type: string;
   status: string;
@@ -133,6 +138,8 @@ export default function AgreementEditor({
           client_short_code: clientShortCode,
           agreement_code: agreement.agreement_code,
           patch,
+          // FMX-051: let the server merge layer spot concurrent edits.
+          baseline_updated_at: agreement.updated_at ?? null,
         }, { dedupeKey: `agreement.update.${agreement.id}` });
         router.replace(`/clients/${clientShortCode}/agreements/${encodeURIComponent(agreement.agreement_code)}`);
         router.refresh();
