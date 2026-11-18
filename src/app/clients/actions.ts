@@ -281,6 +281,21 @@ export async function saveProperty(fd: FormData): Promise<ActionResult> {
       storeys: num(fd, 'storeys', 'Storeys', { min: 0, max: 200, int: true }),
       gross_floor_area_m2: num(fd, 'gross_floor_area_m2', 'Floor area', { min: 0 }),
       tenant_name: str(fd, 'tenant_name', 200),
+      // FMX-076: tenant contact + intake channel.
+      tenant_contact_name: str(fd, 'tenant_contact_name', 200),
+      tenant_contact_phone: str(fd, 'tenant_contact_phone', 50),
+      tenant_contact_email: str(fd, 'tenant_contact_email', 200),
+      tenant_preferred_channel: oneOf(
+        fd,
+        'tenant_preferred_channel',
+        [
+          { value: 'email',       label: 'Email' },
+          { value: 'whatsapp',    label: 'WhatsApp' },
+          { value: 'google_chat', label: 'Google Chat' },
+        ],
+        'email',
+        'Tenant intake channel',
+      )!,
       access_notes: str(fd, 'access_notes', 2000),
       dropbox_folder: str(fd, 'dropbox_folder', 300),
       dropbox_photos_path: str(fd, 'dropbox_photos_path', 300),

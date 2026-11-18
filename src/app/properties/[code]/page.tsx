@@ -68,6 +68,24 @@ export default async function PropertyDetail({ params }: { params: { code: strin
             property.address,
           ].filter(Boolean).join('  •  ') || '—'}
         </p>
+        {/* FMX-076: tenant intake channel + contact. Shown inline so Carl
+            can see at a glance how a tenant for this property reaches
+            FMX, and verify the contact the matching gateways will key on. */}
+        {(property.tenant_contact_name || property.tenant_contact_phone || property.tenant_contact_email || property.tenant_preferred_channel) && (
+          <div className="text-xs text-muted mt-2 flex flex-wrap gap-x-4 gap-y-1">
+            {property.tenant_preferred_channel && (
+              <span>
+                <span className="font-semibold text-navy">Intake:</span>{' '}
+                {property.tenant_preferred_channel === 'whatsapp'    ? 'WhatsApp' :
+                 property.tenant_preferred_channel === 'google_chat' ? 'Google Chat' :
+                                                                       'Email'}
+              </span>
+            )}
+            {property.tenant_contact_name  && <span>Contact: {property.tenant_contact_name}</span>}
+            {property.tenant_contact_phone && <span>{property.tenant_contact_phone}</span>}
+            {property.tenant_contact_email && <span>{property.tenant_contact_email}</span>}
+          </div>
+        )}
         <div className="flex gap-2 mt-3">
           <Link href={`/defects?property=${encodeURIComponent(property.short_code)}`}
             className="rounded-full border border-gray-300 text-navy text-sm font-semibold px-4 py-2 hover:border-navy">All defects</Link>

@@ -1601,17 +1601,44 @@ Touched: `src/app/page.tsx`.
 
 ### [FMX-076] Tenancies: preferred_channel column + admin UI
 
-- Type: story · Size: S · Status: idea · Part of: FMX-024
+- Type: story · Size: S · Status: done 2026-11-19 · Part of: FMX-024
 
-**AC** — Column `tenancies.preferred_channel` enum `whatsapp|google_chat|email` (default `email`). Admin field on the tenancy editor to set per-tenant. Migration + form field + display line on the tenancy view.
+**Done notes:**
+
+- **Scope adjustment** — the backlog story assumed a `tenancies` table. Reality: tenant info lives directly on `properties` (`tenant_name`, `tenant_short_code`, `tenant_contact_name`, `tenant_contact_phone`, `tenant_contact_email`). The gateways will key on those existing columns, so this story adds just one new column rather than a separate join table. A proper `tenancies` relation can land later if multi-tenant-per-property becomes a real pattern.
+- **Migration `fmx_076_tenant_preferred_channel`** — `properties.tenant_preferred_channel text not null default 'email' check (in ('email','whatsapp','google_chat'))`. Check constraint keeps the type straight at the DB level too.
+- **Property editor** (`src/app/clients/fields.ts`) — four new fields in the standard order under Tenant: contact name, contact phone, contact email, and the intake-channel select (Email / WhatsApp / Google Chat). Help text points at FMX-077/078 so future-Carl knows where the gateway code lives.
+- **`saveProperty` action** writes all four new fields through the same validators every other property field uses (str + oneOf).
+- **Property hub display** — intake + contact shown inline under the address line when any of the four fields are populated. Keeps the header tight when there's nothing to show.
+- **No changes to the tenant-facing surfaces yet** — FMX-077/078 read this column when they land.
 
 ---
 
 ### [FMX-077] WhatsApp intake gateway
 
-- Type: story · Size: L · Status: idea · Part of: FMX-024 · Depends on: FMX-076
+- Type: story · Size: L · Status: done 2026-11-19 · Part of: FMX-024 · Depends on: FMX-076
 
-**AC** — Meta Cloud API webhook endpoint `/api/whatsapp/inbound`. Signature verification. Match sender number against `tenancies.contact_phone`; on match, create draft defect scoped to that tenancy's property with photos pulled from the WhatsApp media endpoint. Reply with defect number. Classifier (reuse `src/lib/trade/classify.ts`) seeds trade. Unknown senders get a one-time "we don't recognise this number, please ask your FM" reply.
+**Done notes:**
+
+- **Migration `fmx_077_whatsapp_inbound`** — audit + dedupe table paralleling `email_inbox`. Columns: `wa_message_id` (unique → dedupe), `received_at`, `from_wa_id`, `from_name`, `phone_number_id`, `message_type`, `text_body`, `media_ids[]`, `photo_urls[]`, `property_id`, `defect_id`, `trade`, `severity`, `classification` (jsonb), `status`, `reply_text`, `reply_sent_at`, `raw_payload`. Indexes on received_at desc and (from_wa_id, received_at desc) for the "has this unknown sender heard from us already?" check.
+- **New `src/lib/whatsapp/client.ts`** — single trust boundary for Meta Graph API: `verifyMetaSignature(rawBody, header)` (HMAC-SHA256 with App Secret, timing-safe compare, fail-closed when env missing), `downloadWhatsAppMedia(mediaId)` (two-step lookup + fetch), `sendWhatsAppText(waId, body)` (POST to `/<phone_number_id>/messages` inside the 24h window), `normalisePhoneDigits(input)` (digit-only canonicalisation for matching).
+- **New webhook `/api/whatsapp/inbound`** — GET handles Meta's `hub.challenge` subscribe handshake against `WHATSAPP_VERIFY_TOKEN`; POST reads the raw body for HMAC verify, dedupes on `wa_message_id`, walks every message in every change (Meta batches), and processes each independently so one failure doesn't poison the batch.
+- **Sender matching** — normalises both the incoming `wa_id` and every `properties.tenant_contact_phone` to digits, then matches on exact OR 8-digit-suffix overlap (Fiji numbers are 7 digits; this catches +679/679/local-only variants without being so loose that unrelated numbers with a 5-digit tail overlap).
+- **On known sender** — audit row logged first, then a DRAFT defect is created scoped to the matched property. Status stays `draft` so Carl promotes from the email-inbox-style queue; nothing opens silently. Trade is seeded from the existing `classifyTrade()` module so the register stays consistent across email + WhatsApp intake.
+- **Media download** — image/video/document all fetched via the Graph API and uploaded to the existing `defect-photos` bucket under `<defect_number>/<yyyy-mm>/whatsapp-<ts>-<mediaId>.<ext>`. Public URLs appended to `defects.photo_urls`. Failed downloads log and continue (media ids stay on the audit row).
+- **Reply** — confirmation message sent inside Meta's 24h service window: "Thanks <name> — logged as DEF-### for <property_code>. Your FM will review and come back to you." Reply text + sent timestamp captured on the audit row.
+- **Unknown-sender path** — audit row still logged, `status='unknown_sender'`, ONE reply sent in any rolling 7 days per `wa_id`: "we don't recognise this number — ask your FM to add your contact phone." Repeat messages from the same unknown number are logged but silent, so a burst doesn't look like spam.
+- **Required env vars**: `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`. Set these in Vercel + local `.env.local`; the module fails closed if any are missing (refuses webhooks rather than accepting forgeries).
+- **TypeScript compiles clean.**
+
+**Deliberate scope cuts (deferred):**
+
+- Severity keyword mapping — tenant free-text rarely fits critical/major patterns; promote-to-open is where Carl sets it. Could be lifted later if a pattern emerges.
+- Outbound status pushes (dispatched / resolved → tenant) are FMX-080, which also handles the >24h template path.
+- Non-image attachments (PDFs, docs) currently go to the defect-photos bucket alongside images. If that gets messy a second bucket + manifest column follows.
+- No `/whatsapp-inbox` admin view yet; Carl promotes drafts via `/email-inbox` + `/defects`. A separate inbox page is a 20-min follow-up when volume warrants.
+
+**Webhook URL to configure in Meta's WABA dashboard:** `https://<your-domain>/api/whatsapp/inbound`. Verify token: whatever you set `WHATSAPP_VERIFY_TOKEN` to. Subscribe to `messages` only (nothing else yet).
 
 ---
 

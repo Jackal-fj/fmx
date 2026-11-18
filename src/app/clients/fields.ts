@@ -70,6 +70,25 @@ export function propertyFields(r: Row): Field[] {
     { name: 'address', label: 'Address', defaultValue: v(r, 'address'), wide: true },
     { name: 'facility_type', label: 'Facility type', defaultValue: v(r, 'facility_type'), placeholder: 'Office, Residential…' },
     { name: 'tenant_name', label: 'Tenant / occupier', defaultValue: v(r, 'tenant_name') },
+    // FMX-076: tenant contact + preferred intake channel. The channel drives
+    // which inbound gateway accepts messages for this property (FMX-077 WhatsApp
+    // / FMX-078 Google Chat) and which outbound template FMX-080 uses.
+    { name: 'tenant_contact_name', label: 'Tenant contact name', defaultValue: v(r, 'tenant_contact_name') },
+    { name: 'tenant_contact_phone', label: 'Tenant contact phone', type: 'tel', defaultValue: v(r, 'tenant_contact_phone'), placeholder: '+679 …', help: 'Used to match incoming WhatsApp from the tenant.' },
+    { name: 'tenant_contact_email', label: 'Tenant contact email', type: 'email', defaultValue: v(r, 'tenant_contact_email'), help: 'Used to match incoming Google Chat / email from the tenant.' },
+    {
+      name: 'tenant_preferred_channel',
+      label: 'Tenant intake channel',
+      type: 'select',
+      required: true,
+      options: [
+        { value: 'email',       label: 'Email' },
+        { value: 'whatsapp',    label: 'WhatsApp' },
+        { value: 'google_chat', label: 'Google Chat' },
+      ],
+      defaultValue: v(r, 'tenant_preferred_channel') || 'email',
+      help: 'Where the tenant logs defects. Email today; WhatsApp + Chat land with FMX-077/078.',
+    },
     { name: 'storeys', label: 'Storeys', type: 'number', defaultValue: v(r, 'storeys') },
     { name: 'gross_floor_area_m2', label: 'Floor area m²', type: 'number', defaultValue: v(r, 'gross_floor_area_m2') },
     { name: 'dropbox_folder', label: 'Dropbox site folder', defaultValue: v(r, 'dropbox_folder'), help: 'Inside the client folder. Blank uses the property code.' },
