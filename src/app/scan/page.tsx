@@ -6,9 +6,10 @@ export const dynamic = 'force-dynamic';
 // the camera, decoder and resolver — this wrapper is just a thin host
 // so the route stays in /scan and the bundle split is clean.
 export default function ScanPage() {
+  const secretKey = process.env.QUICK_ADD_SECRET || '';
   return (
     <div className="max-w-md mx-auto">
-      <ScanRunner />
+      <ScanRunner secretKey={secretKey} />
     </div>
   );
 }

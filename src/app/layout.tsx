@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import Nav from '@/components/nav';
 import ServiceWorkerRegister from '@/components/sw-register';
+import FieldCaptureBoot from '@/lib/field-capture/queue-handlers';
 
 export const metadata: Metadata = {
   title: 'FMX — Commercial Management Solutions',
@@ -39,6 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className="font-sans pt-14">
         <ServiceWorkerRegister />
+        <FieldCaptureBoot />
         <Nav quickAddKey={quickAddKey} />
         <main className="max-w-6xl mx-auto px-4 py-8">{children}</main>
         <footer className="max-w-6xl mx-auto px-4 py-6 text-xs text-muted border-t mt-12">

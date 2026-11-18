@@ -724,6 +724,52 @@ These are each S-sized — the pattern is: write a thin server-action wrapper th
 
 ---
 
+### [FMX-068] Offline wiring for inspection writes
+
+- Type: story · Size: M · Status: done 2026-11-18 (Phase A) · Part of: FMX-055 / FMX-046 follow-ups
+
+**Done notes — Phase A (data writes):**
+
+- **`FieldCaptureBoot`** client component mounted in root layout registers four queue handlers on first paint and starts the runner:
+  - `inspection.recordResult` → `recordResult`
+  - `inspection.completeSession` → `completeSession`
+  - `inspection.raiseDefects` → `raiseDefectsFromSession`
+  - `scan.record` → `recordScan`
+- **Runner migration** — `saveCurrent()` now calls `enqueue('inspection.recordResult', …, { dedupeKey: 'inspection.recordResult.<session>.<item>' })` and resolves immediately. The item answer saves locally in IndexedDB; the UI advances to the next question without waiting on the network. Re-answering an item collapses on the dedupe key, so the final answer is the one that syncs.
+- **Close migration** — `completeSession` + `raiseDefectsFromSession` both enqueued with separate dedupe keys. Two handlers so the fail→job pipeline still runs cleanly even if the tab closes between them.
+- **Scanner wiring (closes FMX-066 too)** — every resolved scan now enqueues `scan.record` with `{ target_kind, target_id, target_path, context: 'scan_jump', scanned_at }`. Idempotent via client-assigned uuid.
+- **Sync chip** (FMX-046) was already in the nav — now shows live counts as inspection writes queue up offline and drain when the connection returns.
+
+**Still inline (not queued) — Phase B scope:**
+
+- **Photos** (per-item inspection photos + attendance photo) still upload via inline `fetch('/api/inspection-photo')`. Binary blobs aren't JSON-serialisable; the queue payloads need a separate Dexie blob table + a handler that reads the blob, uploads, writes back the public URL, and only then marks the result for sync. Raised as **FMX-072 (M)**.
+
+**Result today:** a KGF-size inspection run with no photos works fully offline — the inspector can answer every question, close with signature, and every row syncs when connectivity returns. Photo-required items still need a connection; FMX-072 removes that constraint.
+
+---
+
+### [FMX-072] Offline photo pipeline (inspection + attendance)
+
+- Type: story · Size: M · Status: next · Part of: FMX-068
+
+**AC**
+
+- New `pending_blobs` table in Dexie (id, blob, mime, created_at). Photos captured offline write to this table instead of uploading immediately.
+- New queue kind `photo.upload` with a handler that reads the blob by id, POSTs to `/api/inspection-photo`, writes the resolved URL back to the owning `inspection_results.photo_urls` row (also via the queue)
+- Runner UI shows a per-photo sync chip until each ACK; attendance photo too
+- Local blobs evict from Dexie after server ACK
+- Works end-to-end on a plane / underground / in-bush: inspector captures photos, hits Close, closes app, comes back online — everything syncs
+
+---
+
+### [FMX-066] Wire scanner to record scan events
+
+- Type: tech-debt · Size: XS · Status: done 2026-11-18 · Folded into FMX-068
+
+**Done notes:** Scanner now enqueues `scan.record` on each resolved scan. See FMX-068 Phase A for details.
+
+---
+
 ### [FMX-059] Migrate photo appender onto the write queue
 
 - Type: tech-debt · Size: S · Status: next · Follows: FMX-013, FMX-046
@@ -990,7 +1036,7 @@ Split complete. Seven stories below carry the work. FMX-052 and FMX-054 can star
 **Visible but deferred:**
 
 - Voice notes per item — MediaRecorder works but needs polish. Raised as **FMX-067 (S)**.
-- Offline — writes still go straight to the server; migrating `recordResult` + photo upload onto the FMX-046 queue is **FMX-068 (S)** so an offline inspection survives.
+- Offline — see FMX-068 (now done — Phase A shipped the data-write queue migration; Phase B / FMX-072 moves photo blobs onto the queue too).
 - Auto-job on fail — **FMX-056** (next in queue).
 - Signature + attendance photo on complete — **FMX-057**.
 

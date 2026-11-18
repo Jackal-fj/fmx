@@ -3,7 +3,7 @@
 import { useState, useTransition, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { recordResult, completeSession, raiseDefectsFromSession } from '@/lib/field-capture/actions';
+import { enqueue } from '@/lib/offline/queue';
 import SignaturePad, { SignaturePadHandle } from './signature-pad';
 
 type Kind = 'yes_no' | 'rating' | 'number' | 'text';
@@ -307,6 +307,8 @@ export default function Runner({
         if (sigEmpty) { setErr('Signature is required.'); return; }
       }
       startTransition(async () => {
+        // Attendance upload still happens inline — binary blobs stay off
+        // the queue for Phase A of FMX-068 (see FMX-072 for the next step).
         let attendanceUrl: string | null = null;
         try {
           attendanceUrl = await uploadAttendance();
@@ -321,16 +323,29 @@ export default function Runner({
           ? (closeNoteInput.trim() || null)
           : `CLOSED WITHOUT EVIDENCE — ${closeNoteInput.trim() || 'no reason given'}`;
 
-        const r = await completeSession(sessionId, {
-          completed_at: new Date().toISOString(),
-          signature_data_url: signatureDataUrl,
-          attendance_photo_url: attendanceUrl,
-          notes,
-        }, secretKey);
-        if (!r.ok) { setErr(r.error || 'Could not complete session.'); return; }
+        try {
+          // FMX-068: enqueue completeSession, then raiseDefects — two
+          // handlers so the second replays cleanly if the first succeeds
+          // and the tab drops before the second fires.
+          await enqueue('inspection.completeSession', {
+            key: secretKey,
+            session_id: sessionId,
+            patch: {
+              completed_at: new Date().toISOString(),
+              signature_data_url: signatureDataUrl,
+              attendance_photo_url: attendanceUrl,
+              notes,
+            },
+          }, { dedupeKey: `inspection.completeSession.${sessionId}` });
 
-        // FMX-056: raise defects per failed item. Non-fatal on error.
-        await raiseDefectsFromSession(sessionId, secretKey);
+          await enqueue('inspection.raiseDefects', {
+            key: secretKey,
+            session_id: sessionId,
+          }, { dedupeKey: `inspection.raiseDefects.${sessionId}` });
+        } catch (e: any) {
+          setErr(`Could not close inspection: ${e?.message || e}`);
+          return;
+        }
         router.refresh();
       });
     }
@@ -484,9 +499,13 @@ export default function Runner({
       }
     }
 
-    return new Promise(resolve => {
-      startTransition(async () => {
-        const r = await recordResult({
+    // FMX-068: enqueue instead of await. The handler registered in
+    // FieldCaptureBoot calls the server action when online. Dedupe-keyed
+    // by (session, item) so re-answering an item collapses to one op.
+    try {
+      await enqueue('inspection.recordResult', {
+        key: secretKey,
+        result: {
           id: crypto.randomUUID(),
           session_id: sessionId,
           template_item_id: item.id,
@@ -500,17 +519,17 @@ export default function Runner({
           failed: draft.failed,
           failure_reason: draft.failed ? 'Auto fail from fail_if rule' : null,
           answered_at: new Date().toISOString(),
-        }, secretKey);
-        if (!r.ok) {
-          setErr(r.error);
-          resolve(false);
-          return;
-        }
-        // Clear the photo buffer so Back then Next doesn't re-upload.
-        setDraft({ photos: [] });
-        resolve(true);
-      });
-    });
+        },
+      }, { dedupeKey: `inspection.recordResult.${sessionId}.${item.id}` });
+    } catch (e: any) {
+      setErr(`Could not save answer: ${e?.message || e}`);
+      return false;
+    }
+    // Clear the photo buffer so Back then Next doesn't re-upload. The
+    // enqueue above resolves locally, so the UI advances immediately —
+    // sync status surfaces in the top-nav SyncIndicator.
+    setDraft({ photos: [] });
+    return true;
   }
 
   async function next() {

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import jsQR from 'jsqr';
+import { enqueue } from '@/lib/offline/queue';
 
 // FMX-053: QR scan runner.
 // - Opens the rear camera via getUserMedia.
@@ -71,6 +72,19 @@ function resolveToPath(payload: string): string | null {
   }
 }
 
+// Map a resolved path back to a (kind, id) tuple for scan_events.
+function targetFromPath(path: string): { kind: 'property' | 'asset' | 'client' | 'agreement' | 'defect' | 'vendor' | 'other'; id: string } | null {
+  const p = path.split('?')[0].split('#')[0];
+  const seg = p.split('/').filter(Boolean);
+  if (seg[0] === 'clients' && seg[2] === 'agreements' && seg[3]) return { kind: 'agreement', id: seg[3] };
+  if (seg[0] === 'clients' && seg[1])    return { kind: 'client',    id: seg[1] };
+  if (seg[0] === 'properties' && seg[1]) return { kind: 'property',  id: seg[1] };
+  if (seg[0] === 'defects' && seg[1])    return { kind: 'defect',    id: seg[1] };
+  if (seg[0] === 'assets' && seg[1])     return { kind: 'asset',     id: seg[1] };
+  if (seg[0] === 'vendors' && seg[1])    return { kind: 'vendor',    id: seg[1] };
+  return null;
+}
+
 // Short human label from a path — "/properties/NH" → "NH · property".
 function labelForPath(path: string): string {
   const p = path.split('?')[0].split('#')[0];
@@ -87,7 +101,7 @@ function labelForPath(path: string): string {
   return p;
 }
 
-export default function ScanRunner() {
+export default function ScanRunner({ secretKey = '' }: { secretKey?: string }) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -200,6 +214,23 @@ export default function ScanRunner() {
       if (path) {
         const hit: RecentHit = { href: path, label: labelForPath(path), at: Date.now() };
         pushRecent(hit);
+        // FMX-066 / FMX-068: log every scan into scan_events via the queue.
+        if (secretKey) {
+          const target = targetFromPath(path);
+          if (target) {
+            void enqueue('scan.record', {
+              key: secretKey,
+              scan: {
+                id: crypto.randomUUID(),
+                target_kind: target.kind,
+                target_id: target.id,
+                target_path: path,
+                context: 'scan_jump',
+                scanned_at: new Date().toISOString(),
+              },
+            });
+          }
+        }
         stopCamera();
         router.push(path);
         return;
