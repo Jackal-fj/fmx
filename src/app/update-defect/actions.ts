@@ -10,6 +10,80 @@ type UpdateResult = {
   defect_number?: string;
 };
 
+// FMX-061: JSON variant of the status-update flow for the write queue.
+// Takes already-resolved photo URLs (uploaded via /api/defect-photo) and
+// does the audit row + status flip + merge into defect.photo_urls. No
+// redirect — the caller (queue handler) is a background worker.
+export async function applyDefectStatusUpdate(input: {
+  defect_id: string;
+  defect_number: string;
+  new_status: 'work_ordered' | 'resolved';
+  notes: string;
+  provider_id: string | null;
+  photo_urls: string[];
+  key: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const required = process.env.QUICK_ADD_SECRET;
+  if (!required || input.key !== required) return { ok: false, error: 'Not authorised' };
+  if (!input.defect_id) return { ok: false, error: 'Missing defect id' };
+  if (!['work_ordered', 'resolved'].includes(input.new_status)) {
+    return { ok: false, error: 'Status must be In Progress or Resolved' };
+  }
+  if (input.new_status === 'resolved' && (input.notes || '').trim().length < 10) {
+    return { ok: false, error: 'Resolution notes must be at least 10 characters when marking Resolved' };
+  }
+  if (!Array.isArray(input.photo_urls) || input.photo_urls.length === 0) {
+    return { ok: false, error: 'At least one photo URL is required' };
+  }
+
+  const { data: defect } = await supabaseServer
+    .from('defects')
+    .select('id, status, photo_urls')
+    .eq('id', input.defect_id)
+    .maybeSingle();
+  if (!defect) return { ok: false, error: 'Defect not found' };
+  const statusFrom = defect.status;
+  const existingPhotos: string[] = Array.isArray(defect.photo_urls) ? defect.photo_urls : [];
+
+  const { error: auditErr } = await supabaseServer
+    .from('defect_updates')
+    .insert({
+      defect_id: defect.id,
+      status_from: statusFrom,
+      status_to: input.new_status,
+      notes: input.notes || null,
+      photo_urls: input.photo_urls,
+      provider_id: input.provider_id || null,
+      source: 'quick_update',
+    });
+  if (auditErr) return { ok: false, error: `Audit log failed: ${auditErr.message}` };
+
+  const mergedPhotos = Array.from(new Set([...existingPhotos, ...input.photo_urls]));
+  const updatePayload: Record<string, any> = {
+    status: input.new_status,
+    photo_urls: mergedPhotos,
+    updated_at: new Date().toISOString(),
+  };
+  if (input.new_status === 'resolved') {
+    updatePayload.resolved_at = new Date().toISOString();
+    if (input.notes) updatePayload.resolution_notes = input.notes;
+  }
+
+  const { error: defectErr } = await supabaseServer
+    .from('defects')
+    .update(updatePayload)
+    .eq('id', defect.id);
+  if (defectErr) return { ok: false, error: `Status update failed: ${defectErr.message}` };
+
+  revalidatePath('/defects');
+  revalidatePath(`/defects/${input.defect_number}`);
+  revalidatePath('/update-defect');
+  revalidatePath('/');
+  revalidatePath('/maintenance');
+  revalidatePath('/properties', 'layout');
+  return { ok: true };
+}
+
 // Server Action — receives FormData with photos already client-side-compressed.
 // Validates secret key, uploads photos to Supabase Storage, writes audit row,
 // flips defect status. Redirects to success on completion.

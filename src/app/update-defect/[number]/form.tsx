@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useTransition, useRef } from 'react';
-import { updateDefect } from '../actions';
+import { useRouter } from 'next/navigation';
+import { enqueue } from '@/lib/offline/queue';
+import { storeBlob } from '@/lib/offline/blobs';
 import VendorPicker, { type ProviderOption } from '@/components/vendor-picker';
 
 type DefectInfo = {
@@ -89,6 +91,7 @@ export default function UpdateDefectForm({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
@@ -154,26 +157,25 @@ export default function UpdateDefectForm({
       return;
     }
 
-    const fd = new FormData();
-    fd.set('defect_id', defect.id);
-    fd.set('new_status', newStatus);
-    fd.set('notes', notes.trim());
-    fd.set('provider_id', providerId);
-    fd.set('key', secretKey);
-    for (const p of previews) {
-      fd.append('photos', p.file);
-    }
-
     startTransition(async () => {
       try {
-        const result = await updateDefect(fd);
-        // On success, the server action redirects; we only see a result if it errored.
-        if (result && !result.ok) {
-          setErr(result.error || 'Update failed. Try again.');
-        }
+        // FMX-061: stage photos locally + enqueue the status change as one
+        // atomic op. Handler uploads, writes audit, flips status. Dedupe
+        // key is intentionally per-attempt (Date.now()) so successive
+        // retries of a resolve don't collapse into each other.
+        const blobIds: string[] = [];
+        for (const p of previews) blobIds.push(await storeBlob(p.file));
+        await enqueue('defect.status.update', {
+          key: secretKey,
+          defect_id: defect.id,
+          defect_number: defect.defect_number,
+          new_status: newStatus as 'work_ordered' | 'resolved',
+          notes: notes.trim(),
+          provider_id: providerId || null,
+          blob_ids: blobIds,
+        }, { dedupeKey: `defect.status.update.${defect.id}.${Date.now()}` });
+        router.push(`/update-defect/success?ref=${encodeURIComponent(defect.defect_number)}&status=${encodeURIComponent(newStatus)}&key=${encodeURIComponent(secretKey)}`);
       } catch (e: any) {
-        // Redirects throw a special NEXT_REDIRECT — let it propagate.
-        if (e?.digest?.startsWith?.('NEXT_REDIRECT')) throw e;
         setErr(e?.message || 'Update failed. Try again.');
       }
     });

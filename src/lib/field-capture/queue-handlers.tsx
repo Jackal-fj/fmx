@@ -23,6 +23,8 @@ import {
 // FMX-059/060/062: also wire the existing defect + agreement write paths.
 import { setDefectTrade, appendDefectPhotos } from '@/app/defects/[number]/actions';
 import { updateAgreement } from '@/app/clients/[code]/agreements/[agreement_code]/actions';
+// FMX-061: update-defect status flip on top of the queue.
+import { applyDefectStatusUpdate } from '@/app/update-defect/actions';
 import type {
   InspectionResult,
   ScanEvent,
@@ -147,6 +149,53 @@ function registerAll() {
     if (!r.ok) throw new Error(r.error || 'append failed');
     for (const blobId of kept) await deleteBlob(blobId);
   });
+
+  // FMX-061: update-defect status change + evidence photos.
+  // Owns the whole sequence as one op so the status flip only lands once
+  // the photos are up and the audit row has concrete URLs. Retry-safe:
+  // if the status flip fails after photos uploaded, the retry re-uploads
+  // the photos (tolerable — duplicates sink into photo_urls as unique set)
+  // and re-flips the status (idempotent at the row level).
+  registerHandler('defect.status.update', async (p: DefectStatusUpdatePayload) => {
+    // 1. Upload each blob via /api/defect-photo, collect URLs.
+    const fd = new FormData();
+    fd.set('defect_id', p.defect_id);
+    fd.set('key', p.key);
+    const kept: string[] = [];
+    for (const blobId of p.blob_ids) {
+      const b = await getBlob(blobId);
+      if (!b) continue;
+      fd.append('photos', new File([b], `${blobId}.jpg`, { type: b.type || 'image/jpeg' }));
+      kept.push(blobId);
+    }
+    if (kept.length === 0) {
+      // No photos survived in local storage — can't satisfy the "at least
+      // one photo" requirement of the status flip. Treat as done so the
+      // queue clears rather than looping; the FM will see the update never
+      // took and can redo it.
+      return;
+    }
+    const res = await fetch('/api/defect-photo', { method: 'POST', body: fd });
+    if (!res.ok) throw new Error(`defect-photo upload ${res.status}`);
+    const body = await res.json();
+    const photo_urls: string[] = Array.isArray(body.urls) ? body.urls : [];
+    if (photo_urls.length === 0) throw new Error('No photos uploaded');
+
+    // 2. Flip status + write audit row with those URLs.
+    const r = await applyDefectStatusUpdate({
+      defect_id: p.defect_id,
+      defect_number: p.defect_number,
+      new_status: p.new_status,
+      notes: p.notes,
+      provider_id: p.provider_id,
+      photo_urls,
+      key: p.key,
+    });
+    if (!r.ok) throw new Error(r.error || 'status update failed');
+
+    // 3. Evict blobs on success.
+    for (const blobId of kept) await deleteBlob(blobId);
+  });
 }
 
 type PhotoUploadPayload = { key: string; blob_id: string; session_id: string }
@@ -162,6 +211,16 @@ type AgreementUpdatePayload = {
   client_short_code: string;
   agreement_code: string;
   patch: Record<string, unknown>;
+};
+
+type DefectStatusUpdatePayload = {
+  key: string;
+  defect_id: string;
+  defect_number: string;
+  new_status: 'work_ordered' | 'resolved';
+  notes: string;
+  provider_id: string | null;
+  blob_ids: string[];
 };
 
 // Mount in the root layout so the handlers are live before any

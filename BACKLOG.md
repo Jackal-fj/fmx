@@ -832,7 +832,16 @@ These are each S-sized — the pattern is: write a thin server-action wrapper th
 
 ### [FMX-061] Migrate update-defect status-change onto the write queue
 
-- Type: tech-debt · Size: S · Status: next · Follows: FMX-046
+- Type: tech-debt · Size: S · Status: done 2026-11-18 · Follows: FMX-046
+
+**Done notes:**
+
+- New `/api/defect-photo` endpoint — simple `defect_id + key + photos` upload to the shared `defect-photos` bucket under `${defect_id}/${ts}-${i}.ext` (matches the path convention the old monolithic `updateDefect` action was writing to).
+- New JSON server action `applyDefectStatusUpdate({ defect_id, defect_number, new_status, notes, provider_id, photo_urls, key })` in `src/app/update-defect/actions.ts`. Same validation + audit-row + status-flip + resolution-notes logic as the old `updateDefect`, but takes already-resolved photo URLs instead of raw File objects and doesn't redirect (caller is a background worker).
+- New queue handler `defect.status.update` owns the whole sequence: reads blobs from Dexie → uploads via `/api/defect-photo` → calls `applyDefectStatusUpdate` with the resolved URLs → evicts blobs on success. One op per update attempt so photos and status-flip either both land or both retry; a mid-flight failure never leaves a status flipped without evidence.
+- Form migrated — compress → `storeBlob()` each photo → `enqueue('defect.status.update', { … blob_ids }, dedupeKey: 'defect.status.update.<id>.<attempt-ts>')`. Form redirects straight to the success page optimistically; handler drains in the background.
+- Idempotency: the dedupe key intentionally includes `Date.now()` so a retry attempt doesn't collapse with a different attempt — each "mark resolved" is its own op. If the status flip retries after the photo upload succeeded, duplicate URL entries sink into `defects.photo_urls` as a deduped set.
+- Last of the four write-path migrations — **FMX-059, FMX-060, FMX-061, FMX-062 all now on the queue**. Every user-visible write on the app is offline-safe except: `/new-defect` (keep inline because draft-creation is a tiny FormData form with no blobs) and the admin manage flows.
 
 **AC**
 
