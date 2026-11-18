@@ -1180,7 +1180,7 @@ Split complete. Seven stories below carry the work. FMX-052 and FMX-054 can star
 
 **Follow-ups:**
 
-- **FMX-070 (S)** — inline attendance photos + signature evidence in the monthly report (currently we carry the URL but don't embed; the report sanitiser needs to handle images here, same pattern as the defect photos path).
+- **FMX-070 (S)** — Done 2026-11-19. New `inspectionEvidence(...)` section builder renders a per-inspection row below the Monthly spotlight: shaded caption row (template · scope · date · inspector) + two-cell photo row (attendance photo via `imageAtSize()` fetch, signature image via new `signatureParagraph()` base64 decoder). Silent when no inspection in the month carries either. Snapshot gains `signature_data_url` on each `InspectionRun`. Portfolio + per-property report variants both render the strip; per-property filters by `short_code`.
 - **FMX-071 (S)** — "Open by trade" + "Completed this month by trade" tables (same as FMX-039, raised again against the inspection-aware snapshot).
 
 **AC**

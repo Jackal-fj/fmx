@@ -150,6 +150,7 @@ export type InspectionRun = {
   fail_count: number;
   raised_defect_numbers: string[];
   attendance_photo_url: string | null;
+  signature_data_url: string | null;  // FMX-070 — inline evidence in the report
 };
 
 export type ReportSnapshot = {
@@ -599,7 +600,7 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF', repor
     const { data: sessionRows } = await sb
       .from('inspection_sessions')
       .select(`
-        id, completed_at, inspector_name, attendance_photo_url, property_id, asset_id,
+        id, completed_at, inspector_name, attendance_photo_url, signature_data_url, property_id, asset_id,
         template:template_id ( name )
       `)
       .gte('completed_at', monthStartIso)
@@ -670,6 +671,7 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF', repor
           fail_count: stats.failed,
           raised_defect_numbers: Array.from(new Set(stats.defectNums)).sort(),
           attendance_photo_url: s.attendance_photo_url || null,
+          signature_data_url: s.signature_data_url || null,
         });
       }
     }

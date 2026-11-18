@@ -384,6 +384,34 @@ async function imageParagraph(url: string, maxWidth = 1400): Promise<Paragraph |
   }
 }
 
+// FMX-070: render a photo at a chosen pixel size (so attendance and signature
+// can sit at different footprints in the inspection-evidence strip).
+async function imageAtSize(url: string, width: number, height: number): Promise<Paragraph | null> {
+  const buf = await fetchImageAsBuffer(url);
+  if (!buf) return null;
+  try {
+    const ext = (url.split('.').pop() || 'jpg').toLowerCase();
+    const type = ext === 'png' ? 'png' : ext === 'gif' ? 'gif' : ext === 'bmp' ? 'bmp' : 'jpg';
+    return new Paragraph({
+      children: [new ImageRun({ data: buf, transformation: { width, height }, type } as any)],
+    });
+  } catch { return null; }
+}
+
+// FMX-070: signature_data_url is a base64 PNG from the SignaturePad canvas.
+// No fetch — strip the data URL prefix and decode straight to Buffer.
+function signatureParagraph(dataUrl: string, width = 220, height = 80): Paragraph | null {
+  const m = /^data:(image\/(png|jpeg|jpg));base64,(.+)$/i.exec(dataUrl.trim());
+  if (!m) return null;
+  try {
+    const buf = Buffer.from(m[3], 'base64');
+    const type = m[2].toLowerCase() === 'png' ? 'png' : 'jpg';
+    return new Paragraph({
+      children: [new ImageRun({ data: buf, transformation: { width, height }, type } as any)],
+    });
+  } catch { return null; }
+}
+
 // ----- section builders -----------------------------------------------------
 
 function fcaTable(fca: Fca | undefined): (Paragraph | Table)[] {
@@ -818,6 +846,82 @@ function tradeBreakdown(open: TradeCount[], resolved: TradeCount[]): (Paragraph 
   return [table([outer], [half + 60, half + 60])];
 }
 
+// -- 6b. Inspection evidence (FMX-070) ------------------------------------
+// After the Monthly spotlight bullets, render a table of per-inspection
+// evidence: attendance photo (if uploaded + reachable) and signature image.
+// One row per inspection with a caption line (template · property/asset ·
+// date · inspector). Silent when nothing to show.
+async function inspectionEvidence(inspections: Array<{
+  template_name: string;
+  completed_at: string;
+  inspector_name: string | null;
+  short_code: string | null;
+  asset_label: string | null;
+  attendance_photo_url: string | null;
+  signature_data_url: string | null;
+}>): Promise<(Paragraph | Table)[]> {
+  const relevant = inspections.filter(r => r.attendance_photo_url || r.signature_data_url);
+  if (relevant.length === 0) return [];
+
+  const cw = [CONTENT_W / 2 - 60, CONTENT_W / 2 - 60];
+  const rows: TableRow[] = [];
+
+  for (const r of relevant) {
+    const scope = r.asset_label
+      ? `${r.asset_label}${r.short_code ? ` (${r.short_code})` : ''}`
+      : r.short_code || '—';
+    const by = r.inspector_name ? ` by ${r.inspector_name}` : '';
+    const caption = `${r.template_name} · ${scope} · ${r.completed_at}${by}`;
+
+    // Caption row spans both columns for a clean per-inspection header.
+    rows.push(new TableRow({
+      children: [
+        new TableCell({
+          borders: cellBorders,
+          width: { size: CONTENT_W, type: WidthType.DXA },
+          margins: { top: 80, bottom: 80, left: 120, right: 120 },
+          columnSpan: 2,
+          shading: { fill: SHADE_HEADER, type: ShadingType.CLEAR, color: 'auto' },
+          children: [p(caption, { bold: true, color: HEADING_COLOR, size: 18, spaceAfter: 0 })],
+        }),
+      ],
+    }));
+
+    // Two-cell row: attendance photo (left) + signature image (right).
+    const attendanceP = r.attendance_photo_url
+      ? await imageAtSize(r.attendance_photo_url, 260, 195)
+      : null;
+    const signatureP = r.signature_data_url
+      ? signatureParagraph(r.signature_data_url, 260, 90)
+      : null;
+
+    rows.push(new TableRow({
+      children: [
+        new TableCell({
+          borders: cellBorders,
+          width: { size: cw[0], type: WidthType.DXA },
+          margins: { top: 80, bottom: 80, left: 120, right: 120 },
+          children: [
+            p('Attendance photo', { italics: true, color: COLOR_MUTED, size: 16, spaceAfter: 60 }),
+            attendanceP || p('—', { color: COLOR_MUTED, size: 16 }),
+          ],
+        }),
+        new TableCell({
+          borders: cellBorders,
+          width: { size: cw[1], type: WidthType.DXA },
+          margins: { top: 80, bottom: 80, left: 120, right: 120 },
+          children: [
+            p('Signature', { italics: true, color: COLOR_MUTED, size: 16, spaceAfter: 60 }),
+            signatureP || p('—', { color: COLOR_MUTED, size: 16 }),
+          ],
+        }),
+      ],
+    }));
+  }
+
+  return [table(rows, cw)];
+}
+
 // -- 6. Monthly spotlight bullets (auto-derived) ---------------------------
 // Themes the month's activity. Hand-curated prose can be added later via an
 // editable notes table; for now derives from the data in-snapshot.
@@ -1129,6 +1233,13 @@ async function propertyReport(prop: Property, snap: ReportSnapshot, reportMonth:
       reportLabel,
     ),
 
+    // 6b. INSPECTION EVIDENCE (FMX-070) — property-scoped
+    ...(await inspectionEvidence(
+      (((snap as any).inspectionsThisMonth || []) as any[]).filter(
+        (r: any) => r.short_code === prop.short_code,
+      ),
+    )),
+
     // 7. CAPITAL WORKS
     h2('Capital works'),
     ...capitalWorksTable(propCaps),
@@ -1423,6 +1534,9 @@ async function portfolioReport(snap: ReportSnapshot, reportMonth: string): Promi
     // 6. MONTHLY SPOTLIGHT
     h2(`${reportLabel} spotlight`),
     ...monthlySpotlight(snap, reportLabel),
+
+    // 6b. INSPECTION EVIDENCE (FMX-070) — portfolio-wide
+    ...(await inspectionEvidence(((snap as any).inspectionsThisMonth || []) as any[])),
 
     // 7. CAPITAL WORKS
     h2('Capital works'),
