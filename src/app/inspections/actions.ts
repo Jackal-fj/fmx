@@ -15,6 +15,65 @@ function auth(key: string): boolean {
 
 // ---- templates ---------------------------------------------------------
 
+// FMX-065: bulk create — template header + a batch of items in one call.
+// Used by /inspections/import so pasted/copied checklists don't require N
+// round-trips. Items default to yes_no with fail-on-No; FM can tweak each
+// in the template editor after.
+export async function createTemplateWithItems(input: {
+  name: string;
+  description?: string | null;
+  scope?: 'property' | 'asset' | 'any';
+  items: Array<{ question: string; kind?: 'yes_no' | 'rating' | 'number' | 'text'; required?: boolean; photo_required?: boolean; trade?: string | null }>;
+  key: string;
+}): Promise<Res> {
+  if (!auth(input.key)) return { ok: false, error: 'Not authorised.' };
+  const name = (input.name || '').trim();
+  if (!name) return { ok: false, error: 'Name is required.' };
+  const scope = (input.scope || 'any');
+  if (!SCOPES.includes(scope)) return { ok: false, error: `Scope must be one of ${SCOPES.join(', ')}.` };
+  if (!Array.isArray(input.items) || input.items.length === 0) {
+    return { ok: false, error: 'Paste at least one checklist item.' };
+  }
+
+  const { data: tpl, error: tplErr } = await supabaseServer
+    .from('inspection_templates')
+    .insert({ name, description: (input.description || '').trim() || null, scope })
+    .select('id')
+    .single();
+  if (tplErr || !tpl) return { ok: false, error: tplErr?.message || 'Template create failed.' };
+
+  const rows = input.items
+    .map((it, i) => {
+      const q = (it.question || '').trim();
+      if (!q) return null;
+      const kind = KINDS.includes(it.kind as any) ? (it.kind as string) : 'yes_no';
+      return {
+        template_id: tpl.id,
+        sort_order: (i + 1) * 10,
+        question: q.slice(0, 500),
+        kind,
+        required: !!it.required,
+        photo_required: !!it.photo_required,
+        trade: (it.trade || '').trim() || null,
+        fail_if: kind === 'yes_no' ? { no: true } : kind === 'rating' ? { lt: 3 } : null,
+      };
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null);
+  if (rows.length === 0) {
+    // Rolled-back-but-not-really — the template exists but has no items.
+    // Not fatal: caller can edit it. Surface a warning rather than failure.
+    return { ok: true, id: tpl.id, error: 'No usable items parsed.' };
+  }
+  const { error: itemErr } = await supabaseServer
+    .from('inspection_template_items')
+    .insert(rows);
+  if (itemErr) return { ok: false, error: `Template saved but items failed: ${itemErr.message}` };
+
+  revalidatePath('/inspections');
+  revalidatePath(`/inspections/${tpl.id}`);
+  return { ok: true, id: tpl.id };
+}
+
 export async function createTemplate(fd: FormData): Promise<Res> {
   const key = (fd.get('key') as string || '').trim();
   if (!auth(key)) return { ok: false, error: 'Not authorised.' };

@@ -1052,7 +1052,24 @@ Split complete. Seven stories below carry the work. FMX-052 and FMX-054 can star
 
 - **FMX-063** — Done 2026-11-18. See entry below.
 - **FMX-064** — Done 2026-11-18. See entry below.
-- **FMX-065** — import from Word/PDF checklist (SafetyCulture-style template upload). M — the strategy note flagged this as a day-one adoption lever.
+- **FMX-065** — Done 2026-11-19 (paste-text first pass). File upload (.docx / .xlsx) deferred to **FMX-073 (S)** — same page, add a file-upload field that reads the file server-side and feeds the same preview.
+
+---
+
+### [FMX-065] Template import — paste-text first pass
+
+- Type: story · Size: M · Status: done 2026-11-19 (paste-text) · Follows: FMX-054
+
+**Done notes:**
+
+- New server action `createTemplateWithItems({ name, description?, scope?, items, key })` — bulk create in one call so a 20-line paste isn't 20 round-trips. Inserts the template header, then one batch of items with `sort_order` spaced by 10, `kind='yes_no'` default + `fail_if: { no: true }`. Returns the new template id.
+- New page `/inspections/import` — pastebox with live preview. Parser strips common bullet prefixes (• · ● ○ * - en/em dash), numbering (`1.`, `1)`, `(1)`, `1:`, `1 `), and keeps only the first CSV cell when a line has commas (so Excel paste-with-status column works). Blank lines ignored.
+- "Import from text" link added to the Inspection templates list page.
+- Scope + description + name fields match the existing New Template form.
+- Live preview table shows every parsed item with its final position. Submit disabled until a name + ≥ 1 item are present.
+- On success, redirects straight into the new template's editor so the FM can tweak item kinds (rating / number / text) and set required / photo flags in place.
+
+**Deferred:** `.docx` / `.xlsx` / `.pdf` file upload — raised as **FMX-073 (S)**. The paste-text pass covers the practical Carl workflow: open the Word doc, select the list, copy, paste.
 
 **AC**
 

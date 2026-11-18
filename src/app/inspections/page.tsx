@@ -30,11 +30,18 @@ export default async function InspectionsPage() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-navy">Inspection templates</h1>
-        <p className="text-sm text-muted mt-1">
-          Short, re-usable checklists. Each site or asset can carry a default template so a scan walks straight into the right questions.
-        </p>
+      <div className="mb-6 flex items-baseline justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-navy">Inspection templates</h1>
+          <p className="text-sm text-muted mt-1">
+            Short, re-usable checklists. Each site or asset can carry a default template so a scan walks straight into the right questions.
+          </p>
+        </div>
+        {key && (
+          <Link href="/inspections/import" className="shrink-0 text-xs rounded-md border border-navy text-navy font-semibold px-3 py-2 hover:bg-navy hover:text-white">
+            Import from text
+          </Link>
+        )}
       </div>
 
       {key && (
