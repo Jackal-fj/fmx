@@ -1072,7 +1072,24 @@ Split complete. Seven stories below carry the work. FMX-052 and FMX-054 can star
 
 ### [FMX-058] Report assembler consumes field capture
 
-- Type: story · Size: M · Status: next · Part of: FMX-042 · Depends on: FMX-055, FMX-057, FMX-023
+- Type: story · Size: M · Status: done 2026-11-18 · Part of: FMX-042 · Depends on: FMX-055, FMX-057, FMX-023
+
+**Done notes:**
+
+- New `InspectionRun` type on the ReportSnapshot: `session_id, completed_at, template_name, inspector_name, short_code, asset_label, item_count, fail_count, raised_defect_numbers, attendance_photo_url`.
+- `fetchReportSnapshot` now pulls `inspection_sessions` with `completed_at` in `[monthStart, monthEnd)`, scoped to the client's properties — property-scoped sessions straight in, asset-scoped sessions resolved via `asset.property_id`. Per-session item counts + failed counts + raised defect numbers rolled up in a single `inspection_results` query. Attendance photo URL carried through for future evidence inlining.
+- **Monthly spotlight auto-generates a bullet per completed inspection:**
+  - `Inspection. <template name> at <asset label (property)> or <property short_code> on <YYYY-MM-DD> [by <inspector>]. N items checked, K failed.[ Raised: DEF-… .]`
+  - Example target shape from the strategic directive: *"Fire alarm test completed at KH 12 Nov (IFS-Ligaki). 2 extinguishers found expired, replaced same day."* — the auto bullet reads close to that, with hard references to the raised defect numbers rather than a hand-crafted narrative.
+- Property-scoped report variant filters `inspectionsThisMonth` to that property's short_code so per-property monthly reports don't name the whole portfolio's inspections.
+- Zero new tables; this is purely data-layer + spotlight generator.
+
+**Hero-workflow milestone reached.** Scan → Check → Snap → Done → **Report** now writes itself from capture. A monthly inspection recorded through FMX-055 lands as a spotlight bullet in next month's FM Performance Report with no re-keying.
+
+**Follow-ups:**
+
+- **FMX-070 (S)** — inline attendance photos + signature evidence in the monthly report (currently we carry the URL but don't embed; the report sanitiser needs to handle images here, same pattern as the defect photos path).
+- **FMX-071 (S)** — "Open by trade" + "Completed this month by trade" tables (same as FMX-039, raised again against the inspection-aware snapshot).
 
 **AC**
 

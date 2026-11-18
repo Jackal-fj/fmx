@@ -131,6 +131,21 @@ export type CapitalWork = {
   in_report_month: boolean;     // true if install_date falls in the reporting month
 };
 
+// FMX-058: inspection runs completed in the reporting month. Powers the
+// Monthly spotlight bullets that read directly from field capture.
+export type InspectionRun = {
+  session_id: string;
+  completed_at: string;         // 'YYYY-MM-DD'
+  template_name: string;
+  inspector_name: string | null;
+  short_code: string | null;    // property short_code (if session scoped to property)
+  asset_label: string | null;   // "AC-L2-OFF1 — Main AC L2" (if asset-scoped)
+  item_count: number;
+  fail_count: number;
+  raised_defect_numbers: string[];
+  attendance_photo_url: string | null;
+};
+
 export type ReportSnapshot = {
   properties: Property[];
   fcas: Fca[];
@@ -145,6 +160,7 @@ export type ReportSnapshot = {
   ytdByProperty: Map<string, YtdDefectCounts>;     // keyed by short_code
   ytdPortfolio: YtdDefectCounts;                    // portfolio rollup
   capitalWorks: CapitalWork[];                      // all installed assets with install_date <= month-end
+  inspectionsThisMonth: InspectionRun[];            // FMX-058 — sessions completed in the reporting month
   reportMonth: string;                // YYYY-MM that this snapshot represents
   asOfDate: string;                   // ISO date at month-end used as the "as-at" reference for all queries
 };
@@ -557,6 +573,97 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF', repor
     });
   }
 
+  // --- FMX-058: inspections completed this month -------------------------
+  // Scoped to this client's properties and assets so cross-client inspections
+  // (OOFI etc.) don't bleed into a KGF report.
+  // The main `properties` fetch doesn't pull ids (typed Property hides them
+  // for the rest of the pipeline), so look them up by short_code here.
+  const propShortCodes = properties.map(p => p.short_code);
+  const { data: propIdRows } = propShortCodes.length
+    ? await sb.from('properties').select('id, short_code').in('short_code', propShortCodes)
+    : { data: [] as any[] };
+  const propIds = (propIdRows || []).map((r: any) => r.id as string);
+  const inspectionsThisMonth: InspectionRun[] = [];
+  if (propIds.length > 0) {
+    const { data: sessionRows } = await sb
+      .from('inspection_sessions')
+      .select(`
+        id, completed_at, inspector_name, attendance_photo_url, property_id, asset_id,
+        template:template_id ( name )
+      `)
+      .gte('completed_at', monthStartIso)
+      .lt('completed_at', asOfIso)
+      .not('completed_at', 'is', null)
+      .or(`property_id.in.(${propIds.join(',')}),asset_id.not.is.null`)
+      .order('completed_at', { ascending: false });
+
+    const scoped = (sessionRows || []).filter((s: any) =>
+      !!s.property_id ? propIds.includes(s.property_id) : false,
+      // (asset-scoped sessions handled below after we resolve their property)
+    );
+    // Also pull asset-scoped sessions whose asset.property_id is in our set.
+    const assetOnly = (sessionRows || []).filter((s: any) => !s.property_id && !!s.asset_id);
+    if (assetOnly.length > 0) {
+      const { data: assetProps } = await sb
+        .from('assets')
+        .select('id, property_id')
+        .in('id', assetOnly.map((s: any) => s.asset_id));
+      const assetToProp = new Map((assetProps || []).map((a: any) => [a.id, a.property_id as string | null]));
+      for (const s of assetOnly as any[]) {
+        const propId = assetToProp.get(s.asset_id);
+        if (propId && propIds.includes(propId)) {
+          s._resolvedPropertyId = propId;
+          scoped.push(s);
+        }
+      }
+    }
+
+    if (scoped.length > 0) {
+      const sessionIds = scoped.map((s: any) => s.id);
+      // Per-session result counts + raised defect refs in two queries.
+      const [{ data: resultRows }, { data: propsMini }, { data: assetsMini }] = await Promise.all([
+        sb.from('inspection_results')
+          .select('session_id, failed, defect_id, defect:defect_id ( defect_number )')
+          .in('session_id', sessionIds),
+        sb.from('properties').select('id, short_code').in('id', propIds),
+        sb.from('assets')
+          .select('id, asset_code, name')
+          .in('id', scoped.map((s: any) => s.asset_id).filter(Boolean)),
+      ]);
+      const propCodeById = new Map((propsMini || []).map((p: any) => [p.id, p.short_code as string]));
+      const assetLabelById = new Map(
+        (assetsMini || []).map((a: any) => [a.id, (a.asset_code ? `${a.asset_code} — ${a.name}` : a.name) as string])
+      );
+
+      const bySession = new Map<string, { total: number; failed: number; defectNums: string[] }>();
+      for (const r of (resultRows || []) as any[]) {
+        const prev = bySession.get(r.session_id) || { total: 0, failed: 0, defectNums: [] as string[] };
+        prev.total += 1;
+        if (r.failed) prev.failed += 1;
+        const dn = r.defect?.defect_number as string | undefined;
+        if (dn) prev.defectNums.push(dn);
+        bySession.set(r.session_id, prev);
+      }
+
+      for (const s of scoped as any[]) {
+        const stats = bySession.get(s.id) || { total: 0, failed: 0, defectNums: [] };
+        const propId = s.property_id || s._resolvedPropertyId;
+        inspectionsThisMonth.push({
+          session_id: s.id,
+          completed_at: (s.completed_at || '').slice(0, 10),
+          template_name: (s.template as any)?.name || '—',
+          inspector_name: s.inspector_name || null,
+          short_code: propId ? (propCodeById.get(propId) || null) : null,
+          asset_label: s.asset_id ? (assetLabelById.get(s.asset_id) || null) : null,
+          item_count: stats.total,
+          fail_count: stats.failed,
+          raised_defect_numbers: Array.from(new Set(stats.defectNums)).sort(),
+          attendance_photo_url: s.attendance_photo_url || null,
+        });
+      }
+    }
+  }
+
   return {
     properties,
     fcas,
@@ -571,6 +678,7 @@ export async function fetchReportSnapshot(clientShortCode: string = 'KGF', repor
     ytdByProperty,
     ytdPortfolio,
     capitalWorks,
+    inspectionsThisMonth,
     reportMonth: month,
     asOfDate: asOfIso.slice(0, 10),
   };

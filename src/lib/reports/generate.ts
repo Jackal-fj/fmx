@@ -755,6 +755,8 @@ function portfolioSnapshotTable(snap: ReportSnapshot): Table {
 // -- 6. Monthly spotlight bullets (auto-derived) ---------------------------
 // Themes the month's activity. Hand-curated prose can be added later via an
 // editable notes table; for now derives from the data in-snapshot.
+// FMX-058: reads inspection_sessions / inspection_results too so completed
+// inspections surface in the narrative automatically.
 function monthlySpotlight(snap: ReportSnapshot, reportLabel: string): Paragraph[] {
   const out: Paragraph[] = [];
   const thisMonthCaps = snap.capitalWorks.filter(c => c.in_report_month);
@@ -763,6 +765,25 @@ function monthlySpotlight(snap: ReportSnapshot, reportLabel: string): Paragraph[
       out.push(bullet(`Capital works. ${c.make_model} installed at ${c.short_code} (${c.install_date}). Added to the asset register under the ${c.item} line.`));
     }
   }
+
+  // FMX-058: inspection-run bullets from completed sessions. Each session
+  // reads as "Template at scope on date by inspector. N of M items checked,
+  // K failed — raised: DEF-xxx, DEF-xxx." — writes itself from capture, no
+  // Word editing.
+  const inspections = (snap as any).inspectionsThisMonth || [];
+  for (const r of inspections) {
+    const scope = r.asset_label
+      ? `${r.asset_label}${r.short_code ? ` (${r.short_code})` : ''}`
+      : r.short_code || '—';
+    const by = r.inspector_name ? ` by ${r.inspector_name}` : '';
+    let line = `Inspection. ${r.template_name} at ${scope} on ${r.completed_at}${by}. ${r.item_count} item${r.item_count === 1 ? '' : 's'} checked, ${r.fail_count} failed.`;
+    if (r.raised_defect_numbers.length > 0) {
+      const refs = r.raised_defect_numbers.slice(0, 5).join(', ');
+      line += ` Raised: ${refs}${r.raised_defect_numbers.length > 5 ? ' and others' : ''}.`;
+    }
+    out.push(bullet(line));
+  }
+
   const resolvedCrit = snap.resolvedDefects.filter(d => d.severity === 'critical');
   if (resolvedCrit.length > 0) {
     const refs = resolvedCrit.slice(0, 4).map(d => d.defect_number).join(', ');
@@ -1008,7 +1029,15 @@ async function propertyReport(prop: Property, snap: ReportSnapshot, reportMonth:
     // 6. MONTHLY SPOTLIGHT
     h2(`${reportLabel} spotlight`),
     ...monthlySpotlight(
-      { ...snap, resolvedDefects: propResolved, capitalWorks: propCaps, newThisMonth: snap.newThisMonth.filter(n => n.short_code === prop.short_code) } as ReportSnapshot,
+      {
+        ...snap,
+        resolvedDefects: propResolved,
+        capitalWorks: propCaps,
+        newThisMonth: snap.newThisMonth.filter(n => n.short_code === prop.short_code),
+        inspectionsThisMonth: ((snap as any).inspectionsThisMonth || []).filter(
+          (r: any) => r.short_code === prop.short_code,
+        ),
+      } as ReportSnapshot,
       reportLabel,
     ),
 
