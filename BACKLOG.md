@@ -1040,7 +1040,25 @@ Split complete. Seven stories below carry the work. FMX-052 and FMX-054 can star
 
 ### [FMX-057] Close-with-evidence (signature + attendance photo)
 
-- Type: story · Size: S · Status: next · Part of: FMX-042
+- Type: story · Size: S · Status: done 2026-11-18 · Part of: FMX-042
+
+**Done notes:**
+
+- New `SignaturePad` client component (`src/app/inspect/[session_id]/signature-pad.tsx`) — HTML5 `<canvas>` with pointer events so touch, pen and mouse all paint. DPR-scaled for crisp strokes. Exposes `clear()`, `toDataURL()`, `isEmpty()` via `useImperativeHandle`. `touch-none` class stops the page scrolling while the signer is signing.
+- **Review → Close & sign** — Complete button on the review screen now jumps to a dedicated close screen instead of writing straight away.
+- **Close screen** carries three fields:
+  - Attendance photo (required) — rear-camera capture via `capture="environment"`, client-side JPEG compression, Replace button after first shot
+  - Signature (required) — the SignaturePad above
+  - Optional note — plain textarea
+- **Close inspection** button:
+  - Uploads attendance photo via the existing `/api/inspection-photo` endpoint (reuses session id, synthetic `item_id=attendance`) → public URL
+  - Captures signature as base64 PNG dataURL (fits inside `inspection_sessions.signature_data_url`)
+  - Calls `completeSession` with all three + the note
+  - Then runs `raiseDefectsFromSession` (FMX-056) as before
+- **"Close without evidence"** escape — small muted link under the primary button. Confirm dialog, then stamps the session's `notes` with `CLOSED WITHOUT EVIDENCE — <reason or 'no reason given'>` so the audit trail flags the gap.
+- **Done screen enriched** — "Closed with" card renders the attendance photo thumbnail + signature image + any closing note, above the existing auto-raised defects list.
+
+**Hero workflow milestone:** Scan → Check → Snap → **Done (with sig + attendance + auto-raised jobs)** → Report. Only FMX-058 (report consumes field capture) remains for the end-to-end loop to feed the monthly report automatically.
 
 **AC**
 

@@ -22,7 +22,7 @@ export default async function InspectionRunnerPage({
 
   const { data: session } = await supabaseServer
     .from('inspection_sessions')
-    .select('id, template_id, property_id, asset_id, inspector_name, started_at, completed_at, template:template_id ( id, name )')
+    .select('id, template_id, property_id, asset_id, inspector_name, started_at, completed_at, signature_data_url, attendance_photo_url, notes, template:template_id ( id, name )')
     .eq('id', sessionId)
     .maybeSingle();
   if (!session) return notFound();
@@ -75,6 +75,9 @@ export default async function InspectionRunnerPage({
         initialResults={(results || []) as any}
         completed={!!session.completed_at}
         raisedDefects={raisedDefects}
+        signatureUrl={session.signature_data_url || null}
+        attendanceUrl={session.attendance_photo_url || null}
+        closingNote={session.notes || null}
         secretKey={key}
       />
     </div>

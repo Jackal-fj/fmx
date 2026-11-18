@@ -4,6 +4,7 @@ import { useState, useTransition, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { recordResult, completeSession, raiseDefectsFromSession } from '@/lib/field-capture/actions';
+import SignaturePad, { SignaturePadHandle } from './signature-pad';
 
 type Kind = 'yes_no' | 'rating' | 'number' | 'text';
 
@@ -79,7 +80,8 @@ function hasAnswer(item: Item, d: Draft): boolean {
 }
 
 export default function Runner({
-  sessionId, templateName, headerLine, items, initialResults, completed, raisedDefects, secretKey,
+  sessionId, templateName, headerLine, items, initialResults, completed, raisedDefects,
+  signatureUrl, attendanceUrl, closingNote, secretKey,
 }: {
   sessionId: string;
   templateName: string;
@@ -88,10 +90,20 @@ export default function Runner({
   initialResults: Array<{ template_item_id: string; answer_bool: boolean | null; answer_number: number | null; answer_text: string | null; photo_urls: string[] }>;
   completed: boolean;
   raisedDefects: Array<{ defect_number: string; title: string; severity: string }>;
+  signatureUrl: string | null;
+  attendanceUrl: string | null;
+  closingNote: string | null;
   secretKey: string;
 }) {
   const router = useRouter();
   const [idx, setIdx] = useState(0);
+  const [atClose, setAtClose] = useState(false);          // review → close screen
+  // Close-screen state (FMX-057)
+  const [attendancePhoto, setAttendancePhoto] = useState<{ file: File; dataUrl: string } | null>(null);
+  const [closeNoteInput, setCloseNoteInput] = useState('');
+  const [sigEmpty, setSigEmpty] = useState(true);
+  const sigRef = useRef<SignaturePadHandle | null>(null);
+  const attendanceInputRef = useRef<HTMLInputElement | null>(null);
   const [drafts, setDrafts] = useState<Record<string, Draft>>(() => {
     const d: Record<string, Draft> = {};
     for (const it of items) {
@@ -132,6 +144,32 @@ export default function Runner({
           <div className="text-sm text-muted">{headerLine}</div>
           <div className="text-base text-green-700 font-semibold mt-3">✓ Inspection complete</div>
         </div>
+
+        {(attendanceUrl || signatureUrl || closingNote) && (
+          <div className="rounded-lg border bg-white overflow-hidden">
+            <div className="px-4 py-2 border-b bg-gray-50 text-sm font-bold text-navy uppercase tracking-wide">Closed with</div>
+            <div className="p-4 space-y-3">
+              {attendanceUrl && (
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Attendance photo</div>
+                  <img src={attendanceUrl} alt="attendance" className="w-full max-h-56 object-contain rounded border bg-gray-50" />
+                </div>
+              )}
+              {signatureUrl && (
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Signature</div>
+                  <img src={signatureUrl} alt="signature" className="w-full max-h-32 object-contain rounded border bg-white" />
+                </div>
+              )}
+              {closingNote && (
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-muted mb-1">Note</div>
+                  <p className="text-sm whitespace-pre-line">{closingNote}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {raisedDefects.length > 0 ? (
           <div className="rounded-lg border bg-white overflow-hidden">
@@ -219,12 +257,164 @@ export default function Runner({
           >Back</button>
           <button
             type="button"
-            onClick={complete}
+            onClick={() => { setErr(null); setAtClose(true); }}
             disabled={isPending || missing.length > 0}
             className="flex-1 rounded-md bg-green-700 text-white text-base font-semibold py-3 disabled:opacity-50 min-h-[44px]"
           >
-            {isPending ? 'Completing…' : 'Complete inspection'}
+            Close & sign →
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  // --- CLOSE SCREEN -------------------------------------------------------
+  // Shown after the review is clean. Signature + attendance photo required
+  // by default; a "Close without evidence" escape exists but stamps the
+  // notes so the gap is auditable.
+  if (atClose) {
+    async function onAttendance(e: React.ChangeEvent<HTMLInputElement>) {
+      const f = e.target.files?.[0];
+      e.target.value = '';
+      if (!f || !f.type.startsWith('image/')) return;
+      const c = await compressImage(f);
+      const dataUrl: string = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result as string);
+        r.onerror = () => rej(new Error('read failed'));
+        r.readAsDataURL(c);
+      });
+      setAttendancePhoto({ file: c, dataUrl });
+    }
+
+    async function uploadAttendance(): Promise<string | null> {
+      if (!attendancePhoto) return null;
+      const fd = new FormData();
+      fd.append('photos', attendancePhoto.file);
+      fd.set('session_id', sessionId);
+      fd.set('item_id', 'attendance');  // reuse the inspection-photo route with a synthetic item id
+      fd.set('key', secretKey);
+      const res = await fetch('/api/inspection-photo', { method: 'POST', body: fd });
+      if (!res.ok) throw new Error(`attendance upload ${res.status}`);
+      const body = await res.json();
+      return Array.isArray(body.urls) && body.urls[0] ? body.urls[0] : null;
+    }
+
+    function closeNow(withEvidence: boolean) {
+      setErr(null);
+      if (withEvidence) {
+        if (!attendancePhoto) { setErr('Attendance photo is required.'); return; }
+        if (sigEmpty) { setErr('Signature is required.'); return; }
+      }
+      startTransition(async () => {
+        let attendanceUrl: string | null = null;
+        try {
+          attendanceUrl = await uploadAttendance();
+        } catch (e: any) {
+          setErr(`Attendance photo upload failed: ${e?.message || e}`);
+          return;
+        }
+        const signatureDataUrl = sigRef.current && !sigRef.current.isEmpty()
+          ? sigRef.current.toDataURL()
+          : null;
+        const notes = withEvidence
+          ? (closeNoteInput.trim() || null)
+          : `CLOSED WITHOUT EVIDENCE — ${closeNoteInput.trim() || 'no reason given'}`;
+
+        const r = await completeSession(sessionId, {
+          completed_at: new Date().toISOString(),
+          signature_data_url: signatureDataUrl,
+          attendance_photo_url: attendanceUrl,
+          notes,
+        }, secretKey);
+        if (!r.ok) { setErr(r.error || 'Could not complete session.'); return; }
+
+        // FMX-056: raise defects per failed item. Non-fatal on error.
+        await raiseDefectsFromSession(sessionId, secretKey);
+        router.refresh();
+      });
+    }
+
+    return (
+      <div>
+        <ReviewHeader templateName={templateName} headerLine={headerLine} />
+
+        <div className="rounded-lg border bg-white p-4 mt-4 space-y-4">
+          {/* Attendance photo */}
+          <div>
+            <div className="flex items-baseline justify-between mb-2">
+              <span className="text-sm font-semibold text-navy">Attendance photo *</span>
+              <button
+                type="button"
+                onClick={() => attendanceInputRef.current?.click()}
+                className="text-xs rounded-md border border-navy text-navy font-semibold px-2 py-1 hover:bg-navy hover:text-white min-h-[44px]"
+              >{attendancePhoto ? 'Replace' : '+ Photo'}</button>
+              <input ref={attendanceInputRef} type="file" accept="image/*" capture="environment" onChange={onAttendance} className="hidden" />
+            </div>
+            {attendancePhoto ? (
+              <img src={attendancePhoto.dataUrl} alt="attendance" className="w-full max-h-56 object-contain rounded border bg-gray-50" />
+            ) : (
+              <div className="text-xs text-muted">Snap a photo at the location so the record anchors to a real visit.</div>
+            )}
+          </div>
+
+          {/* Signature */}
+          <div>
+            <div className="flex items-baseline justify-between mb-2">
+              <span className="text-sm font-semibold text-navy">Signature *</span>
+              <button
+                type="button"
+                onClick={() => { sigRef.current?.clear(); setSigEmpty(true); }}
+                className="text-xs text-muted hover:text-navy"
+              >Clear</button>
+            </div>
+            <SignaturePad ref={sigRef} onChange={(empty) => setSigEmpty(empty)} />
+            <div className="text-xs text-muted mt-1">Sign above with your finger or a stylus.</div>
+          </div>
+
+          {/* Note */}
+          <div>
+            <label className="block text-[11px] uppercase tracking-wide text-muted mb-1">Note (optional)</label>
+            <textarea
+              value={closeNoteInput}
+              onChange={e => setCloseNoteInput(e.target.value)}
+              rows={3}
+              placeholder="Anything worth flagging — who you met, access notes, follow-ups…"
+              className="w-full rounded-md border border-gray-300 p-3 text-sm bg-white"
+            />
+          </div>
+
+          {err && <div className="text-sm text-red-800">{err}</div>}
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => { setAtClose(false); setErr(null); }}
+              className="rounded-md border border-gray-300 text-navy text-sm font-semibold px-4 py-3 min-h-[44px]"
+            >Back</button>
+            <button
+              type="button"
+              onClick={() => closeNow(true)}
+              disabled={isPending}
+              className="flex-1 rounded-md bg-green-700 text-white text-base font-semibold py-3 disabled:opacity-50 min-h-[44px]"
+            >
+              {isPending ? 'Closing…' : 'Close inspection'}
+            </button>
+          </div>
+
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={() => {
+                if (!confirm('Close without attendance photo + signature? The session will be stamped as such in the audit trail.')) return;
+                closeNow(false);
+              }}
+              disabled={isPending}
+              className="text-xs text-muted hover:text-red-700 underline"
+            >
+              Close without evidence
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -341,22 +531,7 @@ export default function Runner({
     setErr(null);
   }
 
-  async function complete() {
-    const ok = await saveCurrent().catch(() => true);  // allow finish from review
-    if (!ok && item.required) return;
-    startTransition(async () => {
-      const r = await completeSession(sessionId, { completed_at: new Date().toISOString() }, secretKey);
-      if (!r.ok) { setErr(r.error || 'Could not complete session.'); return; }
-      // FMX-056: raise a defect per failed item. Run after completion so a
-      // mid-flight failure doesn't leave orphan jobs. Non-fatal on error.
-      const raise = await raiseDefectsFromSession(sessionId, secretKey);
-      if (raise.ok && raise.data && raise.data.created > 0) {
-        setErr(null);
-        // The done screen below will render; let the next refresh show the result.
-      }
-      router.refresh();
-    });
-  }
+  // (complete flow is on the close screen — see `closeNow()`.)
 
   return (
     <div>
