@@ -138,6 +138,7 @@ export default async function ClientHub({ params }: { params: { code: string } }
         <QA href={`/defects?client=${encodeURIComponent(client.short_code)}`}>Defects</QA>
         <QA href={`/reports?client=${encodeURIComponent(client.short_code)}`}>Reports</QA>
         {key && <QA href={manage('client')}>Manage</QA>}
+        {key && <QA href={`/clients/${client.short_code}/access`}>Access links</QA>}
       </div>
 
       {/* To-complete checklist — only renders when gaps exist */}

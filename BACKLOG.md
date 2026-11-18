@@ -222,7 +222,22 @@ Every story's acceptance criteria assume these principles — they don't need to
 
 ### [FMX-024] Epic — Multi-audience access: client portal and tenant intake
 
-- Type: epic · Size: L (split before building) · Status: idea · Raised: 2026-11-17 (Carl)
+- Type: epic · Size: L · Status: split into FMX-074..081 2026-11-19 · Raised: 2026-11-17 (Carl)
+
+**Split landed 2026-11-19.** Eight sub-stories carry the work:
+
+| # | Ref | Scope | Dep |
+|---|---|---|---|
+| 1 | FMX-074 | `client_access_tokens` table + signed-link gate + `/client/[short_code]` stub landing | none |
+| 2 | FMX-075 | Client landing content — portfolio snapshot, open defects, service contracts, reports library | FMX-074 |
+| 3 | FMX-076 | `tenancies.preferred_channel` column + admin UI | none |
+| 4 | FMX-077 | WhatsApp intake gateway (Meta Cloud API webhook → draft defect + photos) | FMX-076 |
+| 5 | FMX-078 | Google Chat intake gateway (bot → draft defect + photos) | FMX-076 |
+| 6 | FMX-079 | Tenant identification + property routing (shared across gateways) | FMX-077 or FMX-078 |
+| 7 | FMX-080 | Outbound status notifications (dispatched, resolved) via WhatsApp templates + Chat cards | FMX-079 |
+| 8 | FMX-081 | Audit log for tenant-initiated + client-viewed events | FMX-074 |
+
+**Path of least resistance for KGF pilot:** FMX-074 → FMX-075 first (gives Irene read-only access to her portfolio). Tenant intake (FMX-076..080) parks until the client side is proven.
 
 **As** the FM operating FMX
 **I want** FMX to serve three distinct audiences — the FM team (today), the client/landlord, and the tenant — with the right surface for each
@@ -1533,5 +1548,83 @@ Touched: `src/components/nav.tsx`.
 Stat tiles link: Sites → `/properties`; Open defects → `/defects`; Critical open → `/defects?severity=critical`; Major open → `/defects?severity=major`. Recent-defects table rows link defect number, severity badge, title and date to `/defects/<number>`; property code still links to the property page.
 
 Touched: `src/app/page.tsx`.
+
+---
+
+### [FMX-074] Client access tokens + signed-link gate
+
+- Type: story · Size: M · Status: done 2026-11-19 · Part of: FMX-024
+
+**Done notes:**
+
+- **Migration `fmx_074_client_access_tokens`** — table stores `token_hash` (sha256), `client_id`, `label`, `created_at`, `last_used_at`, `last_used_ip`, `revoked_at`. Partial index on unrevoked rows for fast per-client lookups. Plaintext token never touches the database.
+- **New `src/lib/client-access/tokens.ts`** — `generatePlaintextToken()` (32 bytes → urlsafe base64), `hashToken()`, `resolveClientFromToken(plaintext, {ip})`. The resolve function is the single trust boundary between FM-admin and client-viewer code. Bumps `last_used_at` + `last_used_ip` best-effort on every validated hit.
+- **Admin surface** at `/clients/[code]/access` — quick-action tile added to the client hub ("Access links"). Mint form takes a required label ("Irene — KGF landlord"), returns the plaintext URL once in a bright banner with a copy button. Dismiss clears the banner; the URL is not recoverable. Table lists active + revoked tokens with created / last-used metadata. Revoke is a soft delete that preserves the audit trail.
+- **Client-viewer surface** at `/client/[short_code]` — gated by `?t=<plaintext>` or an `fmx_client` cookie scoped to that same path. On first visit the query token is promoted to an httpOnly, secure, sameSite=lax, path-scoped cookie (180d) so subsequent navigations don't leak the token in referrers or server logs. A token bound to one client can't be used to view another — mismatched `short_code` 404s rather than leaking anything.
+- **Chrome split** — the admin `<Nav/>` early-returns `null` on `/client/*` routes so the viewer sees only the read-only landing, not FM tools. Root layout still provides base styles + fonts.
+- **Vague failure** — a missing / wrong / revoked token renders the same "Signed link needed" page; no information about whether the client exists or whether the token was previously valid.
+- **Stub landing content** — holds the frame (client name, "signed in as read-only viewer", label if present, placeholder "your portfolio snapshot lands next" block). The real portfolio snapshot is FMX-075 — sits directly on top of this gate.
+
+**Deliberate scope cuts (deferred to FMX-075+):**
+
+- No RLS yet. The service-role Supabase client is used server-side as everywhere else; isolation is enforced by always querying through `scope.client_id` from the resolved token. Supabase Auth + RLS comes when there are real multi-user workloads to justify the complexity.
+- No magic-link email flow. Carl delivers the URL to the recipient out of band (email, Signal, in person). Magic-link email can wrap this — it would still mint a token then message it — so this gate is the primitive, not a competitor.
+- No audit log of client-viewer page loads yet — that's FMX-081.
+
+---
+
+### [FMX-075] Client portal landing — portfolio snapshot
+
+- Type: story · Size: M · Status: idea · Part of: FMX-024 · Depends on: FMX-074
+
+**AC** — `/client/[short_code]` renders: active agreements block (status badges, no dollar figures unless agreement says client sees them), properties list with address + open-defect count, open defects grouped by property with severity + status + photo thumbnails (read-only), resolved YTD count, service contracts, reports library (PDFs from the Reports page filtered to this client). No write actions. Mobile-first.
+
+---
+
+### [FMX-076] Tenancies: preferred_channel column + admin UI
+
+- Type: story · Size: S · Status: idea · Part of: FMX-024
+
+**AC** — Column `tenancies.preferred_channel` enum `whatsapp|google_chat|email` (default `email`). Admin field on the tenancy editor to set per-tenant. Migration + form field + display line on the tenancy view.
+
+---
+
+### [FMX-077] WhatsApp intake gateway
+
+- Type: story · Size: L · Status: idea · Part of: FMX-024 · Depends on: FMX-076
+
+**AC** — Meta Cloud API webhook endpoint `/api/whatsapp/inbound`. Signature verification. Match sender number against `tenancies.contact_phone`; on match, create draft defect scoped to that tenancy's property with photos pulled from the WhatsApp media endpoint. Reply with defect number. Classifier (reuse `src/lib/trade/classify.ts`) seeds trade. Unknown senders get a one-time "we don't recognise this number, please ask your FM" reply.
+
+---
+
+### [FMX-078] Google Chat intake gateway
+
+- Type: story · Size: L · Status: idea · Part of: FMX-024 · Depends on: FMX-076
+
+**AC** — Chat app endpoint. Slash commands `/log` + `/photo` + `/status`. Card response with defect number. Space ↔ property mapping table. Message-level auth by Workspace domain + sender email ↔ `tenancies.contact_email`.
+
+---
+
+### [FMX-079] Tenant identification + property routing
+
+- Type: story · Size: M · Status: idea · Part of: FMX-024 · Depends on: FMX-077 or FMX-078
+
+**AC** — Shared module: given (channel, sender_id), resolve to a tenancy + property, or return "unknown — ask FM". Caches last-known route per sender. First-time prompt flow uniform across both gateways.
+
+---
+
+### [FMX-080] Outbound status notifications
+
+- Type: story · Size: M · Status: idea · Part of: FMX-024 · Depends on: FMX-079
+
+**AC** — On defect transitions (`open → work_ordered`, `work_ordered → resolved`), send an outbound message on the tenancy's `preferred_channel`. WhatsApp uses approved templates; Chat uses cards. Carl's approval gate on the first N sends per channel.
+
+---
+
+### [FMX-081] Tenant/client event audit log
+
+- Type: story · Size: S · Status: idea · Part of: FMX-024 · Depends on: FMX-074
+
+**AC** — `audit_events` table for every tenant-initiated defect and every client-viewed page, with `(actor_kind, actor_id, action, target_table, target_id, at, ip, ua)`. Admin page `/audit` under Resources (gated by QUICK_ADD_SECRET) lists recent events with filters.
 
 ---

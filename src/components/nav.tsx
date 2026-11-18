@@ -109,6 +109,11 @@ export default function Nav({ quickAddKey: _quickAddKey }: { quickAddKey?: strin
     setMobileOpen(false);
   }, [pathname]);
 
+  // FMX-074: client-viewer routes are a different audience (read-only,
+  // signed-link, no FM tools). Don't render the admin nav on those pages
+  // — the client landing has its own minimal chrome.
+  if (pathname.startsWith('/client/')) return null;
+
   // Close on click outside + Escape
   useEffect(() => {
     if (openGroup === null && !mobileOpen) return;
