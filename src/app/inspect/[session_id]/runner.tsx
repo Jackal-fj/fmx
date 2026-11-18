@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { enqueue } from '@/lib/offline/queue';
 import { storeBlob } from '@/lib/offline/blobs';
 import SignaturePad, { SignaturePadHandle } from './signature-pad';
+import VoiceRecorder from './voice-recorder';
 
 type Kind = 'yes_no' | 'rating' | 'number' | 'text';
 
@@ -26,6 +27,7 @@ type Draft = {
   answer_number: number | null;
   answer_text: string;
   photos: { file: File; dataUrl: string }[];
+  voice: Blob | null;      // FMX-067
   failed: boolean;
 };
 
@@ -51,7 +53,7 @@ async function compressImage(file: File): Promise<File> {
 }
 
 function emptyDraft(): Draft {
-  return { answer_bool: null, answer_number: null, answer_text: '', photos: [], failed: false };
+  return { answer_bool: null, answer_number: null, answer_text: '', photos: [], voice: null, failed: false };
 }
 
 // Given a template item's fail_if and the user's current answer, decide
@@ -114,6 +116,7 @@ export default function Runner({
         answer_number: prior?.answer_number ?? null,
         answer_text: prior?.answer_text ?? '',
         photos: [],  // already-saved photos aren't editable here; new ones only
+        voice: null, // new voice note replaces any prior one on save
         failed: false,
       };
     }
@@ -522,8 +525,26 @@ export default function Runner({
       }
     }
 
-    // Clear the photo buffer so Back then Next doesn't re-stage the same files.
-    setDraft({ photos: [] });
+    // FMX-067: single voice note per answer → stage + enqueue. Dedupe
+    // per-result so re-recording and hitting Next replaces the previous
+    // staged op cleanly.
+    if (draft.voice) {
+      try {
+        const blobId = await storeBlob(draft.voice);
+        await enqueue('voice.upload', {
+          key: secretKey,
+          blob_id: blobId,
+          session_id: sessionId,
+          result_id: resultId,
+        }, { dedupeKey: `voice.upload.${resultId}` });
+      } catch (e: any) {
+        setErr(`Could not stage voice note: ${e?.message || e}`);
+        return false;
+      }
+    }
+
+    // Clear the photo + voice buffers so Back then Next doesn't re-stage.
+    setDraft({ photos: [], voice: null });
     return true;
   }
 
@@ -633,9 +654,17 @@ export default function Runner({
             )}
           </div>
 
+          {/* FMX-067: voice note */}
+          <div className="mt-4">
+            <VoiceRecorder
+              value={draft.voice}
+              onChange={(blob) => setDraft({ voice: blob })}
+            />
+          </div>
+
           {draft.failed && (
             <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
-              ⚠ This answer meets the fail condition. A job will be auto-raised when FMX-056 lands; for now it's recorded as failed on this result.
+              ⚠ This answer meets the fail condition — it's recorded as failed on this result and raises a defect when the inspection closes (FMX-056).
             </div>
           )}
         </div>

@@ -19,6 +19,7 @@ import {
   recordScan,
   attachPhotoToResult,
   attachAttendancePhoto,
+  attachVoiceToResult,
 } from './actions';
 // FMX-059/060/062: also wire the existing defect + agreement write paths.
 import { setDefectTrade, appendDefectPhotos } from '@/app/defects/[number]/actions';
@@ -110,6 +111,28 @@ function registerAll() {
       if (!r.ok) throw new Error(r.error);
     }
     // Local blob no longer needed.
+    await deleteBlob(p.blob_id);
+  });
+
+  // FMX-067: voice-note upload for an inspection result. Mirrors photo.upload
+  // but single-blob + /api/inspection-voice + attachVoiceToResult. One voice
+  // per result row (last upload wins; the runner stages one at a time).
+  registerHandler('voice.upload', async (p: VoiceUploadPayload) => {
+    const blob = await getBlob(p.blob_id);
+    if (!blob) return;   // lost blob = treat as done rather than loop
+    const fd = new FormData();
+    const ext = blob.type.includes('mp4') ? 'm4a' : blob.type.includes('ogg') ? 'ogg' : 'webm';
+    fd.append('voice', new File([blob], `${p.blob_id}.${ext}`, { type: blob.type || 'audio/webm' }));
+    fd.set('session_id', p.session_id);
+    fd.set('item_id', p.result_id);
+    fd.set('key', p.key);
+    const res = await fetch('/api/inspection-voice', { method: 'POST', body: fd });
+    if (!res.ok) throw new Error(`voice upload ${res.status}`);
+    const body = await res.json();
+    const url: string | undefined = body?.url;
+    if (!url) throw new Error('voice upload returned no url');
+    const r = await attachVoiceToResult(p.result_id, url, p.key);
+    if (!r.ok) throw new Error(r.error);
     await deleteBlob(p.blob_id);
   });
 
@@ -222,6 +245,8 @@ type DefectStatusUpdatePayload = {
   provider_id: string | null;
   blob_ids: string[];
 };
+
+type VoiceUploadPayload = { key: string; blob_id: string; session_id: string; result_id: string };
 
 // Mount in the root layout so the handlers are live before any
 // field-capture action is enqueued.

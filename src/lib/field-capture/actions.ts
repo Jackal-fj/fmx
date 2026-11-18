@@ -298,6 +298,25 @@ export async function attachPhotoToResult(
   return { ok: true };
 }
 
+// FMX-067: attach the voice-note URL for an inspection result once the
+// voice.upload handler has pushed the blob to Storage. Idempotent: last
+// upload wins if two are queued (they shouldn't be — the runner stages
+// one voice per item).
+export async function attachVoiceToResult(
+  resultId: string,
+  url: string,
+  key: string,
+): Promise<Res> {
+  if (!auth(key)) return { ok: false, error: 'Not authorised.' };
+  if (!resultId || !url) return { ok: false, error: 'Missing result id or url.' };
+  const { error } = await supabaseServer
+    .from('inspection_results')
+    .update({ voice_note_url: url })
+    .eq('id', resultId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
 export async function attachAttendancePhoto(
   sessionId: string,
   url: string,

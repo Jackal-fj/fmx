@@ -740,6 +740,25 @@ These are each S-sized — the pattern is: write a thin server-action wrapper th
 
 ---
 
+### [FMX-067] Voice notes per inspection item
+
+- Type: story · Size: S · Status: done 2026-11-19 · Follows: FMX-055, FMX-072
+
+**Done notes:**
+
+- New `VoiceRecorder` client component (`src/app/inspect/[session_id]/voice-recorder.tsx`) — single-take `MediaRecorder` with rolling timer. Prefers `audio/webm;codecs=opus`, falls back to the browser default (Safari). Record / Stop (0:12) button toggle, preview `<audio>` + Re-record / Clear after capture. Stream + object URLs cleaned up on unmount. Handles `NotAllowedError` and the "no mediaDevices" case explicitly.
+- New `/api/inspection-voice` route — same auth + path convention as `/api/inspection-photo` but single blob, 15 MB cap, writes to `defect-photos` bucket under `inspection/<session>/<item>/voice-<ts>.{webm|m4a|ogg|mp3}`.
+- New server action `attachVoiceToResult(resultId, url, key)` — mirrors `attachPhotoToResult` for the single `voice_note_url` column (added by FMX-048).
+- New queue handler `voice.upload` — reads the blob, posts to the voice endpoint, attaches the URL via the server action, evicts on success. Missing blob = treat as done (lost storage shouldn't loop forever).
+- Runner integration — `Draft.voice: Blob | null`, VoiceRecorder mounted under the per-item Photos row. On Next the blob stages to Dexie via `storeBlob()` and one `enqueue('voice.upload', …, dedupeKey: 'voice.upload.<result_id>')` goes out so re-recording per answer collapses cleanly. Voice buffer clears after save alongside the photos.
+
+**Behaviour today:**
+
+- Inspector hits Record → speaks → Stop → preview plays back → Next saves the answer and queues the audio for background upload (offline-safe via FMX-072 pattern).
+- One voice note per answered item. Already-saved voice notes aren't shown in the runner when revisiting an item (same pattern as photos) — they live on the result row.
+
+---
+
 ### [FMX-068] Offline wiring for inspection writes
 
 - Type: story · Size: M · Status: done 2026-11-18 (Phase A) · Part of: FMX-055 / FMX-046 follow-ups
@@ -1098,7 +1117,7 @@ Split complete. Seven stories below carry the work. FMX-052 and FMX-054 can star
 
 **Visible but deferred:**
 
-- Voice notes per item — MediaRecorder works but needs polish. Raised as **FMX-067 (S)**.
+- Voice notes per item — shipped as **FMX-067** on 2026-11-19 (see entry below).
 - Offline — see FMX-068 (now done — Phase A shipped the data-write queue migration; Phase B / FMX-072 moves photo blobs onto the queue too).
 - Auto-job on fail — **FMX-056** (next in queue).
 - Signature + attendance photo on complete — **FMX-057**.
