@@ -1267,7 +1267,13 @@ Even before translations land, extract every UI string to a single table (next-i
 
 ### [FMX-038] Email-ingest trade classifier
 
-- Type: tech-debt · Size: XS · Status: next · Raised: 2026-11-17 · Follows: FMX-037
+- Type: tech-debt · Size: XS · Status: done 2026-11-18 · Raised: 2026-11-17 · Follows: FMX-037
+
+**Done notes:**
+
+- New `src/lib/trade/classify.ts` exports `classifyTrade(...texts)` — same 9-bucket keyword vocabulary used in the FMX-021 SQL backfill (HVAC · Fire · Plumbing · Electrical · Genset · Garden and Landscaping · General building / roofing · Waste / skip bin hire · General Handyman). First-match-wins, more specific rules before general. Returns null when nothing hits.
+- Email inbound handler (`/api/email`) now runs the classifier over subject + top-message body + computed title, and inserts the draft defect with `trade: tradeGuess` populated. NULL stays allowed — the FMX-037 promote screen makes trade required before the draft becomes open, so an unclassifiable draft still can't slip through into the register untagged.
+- Classifier module is shared — inspections, future WhatsApp intake (FMX-024), and the FMX-021 backfill all point to the same vocabulary. Any future enrichment of the vocabulary happens in one file.
 
 **AC**
 

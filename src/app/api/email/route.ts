@@ -26,6 +26,7 @@ import {
   classifySender,
   type PostmarkInbound,
 } from '@/lib/postmark';
+import { classifyTrade } from '@/lib/trade/classify';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -202,6 +203,12 @@ export async function POST(request: NextRequest) {
         topBody || '(no body)',
       ].filter(Boolean).join('\n').slice(0, 4000);
 
+      // FMX-038: best-guess trade from subject + top message body + title.
+      // Uses the same keyword vocabulary as the FMX-021 backfill so the
+      // register stays consistent. NULL when nothing matches — FM tags
+      // on promote (FMX-037 makes trade required there).
+      const tradeGuess = classifyTrade(subject, topBody, title);
+
       const { data: newDefect, error: dErr } = await supabaseServer
         .from('defects')
         .insert({
@@ -210,6 +217,7 @@ export async function POST(request: NextRequest) {
           severity: severityGuess || 'moderate',
           status: 'draft',
           property_id: propertyId,
+          trade: tradeGuess,
           identified_at: new Date().toISOString(),
         })
         .select('id, defect_number')
