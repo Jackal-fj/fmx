@@ -4,6 +4,7 @@ import { useState, useTransition, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { enqueue } from '@/lib/offline/queue';
+import { storeBlob } from '@/lib/offline/blobs';
 import SignaturePad, { SignaturePadHandle } from './signature-pad';
 
 type Kind = 'yes_no' | 'rating' | 'number' | 'text';
@@ -287,17 +288,18 @@ export default function Runner({
       setAttendancePhoto({ file: c, dataUrl });
     }
 
-    async function uploadAttendance(): Promise<string | null> {
-      if (!attendancePhoto) return null;
-      const fd = new FormData();
-      fd.append('photos', attendancePhoto.file);
-      fd.set('session_id', sessionId);
-      fd.set('item_id', 'attendance');  // reuse the inspection-photo route with a synthetic item id
-      fd.set('key', secretKey);
-      const res = await fetch('/api/inspection-photo', { method: 'POST', body: fd });
-      if (!res.ok) throw new Error(`attendance upload ${res.status}`);
-      const body = await res.json();
-      return Array.isArray(body.urls) && body.urls[0] ? body.urls[0] : null;
+    // FMX-072: stage the attendance photo to IndexedDB + enqueue the
+    // upload. Session row commits with attendance_photo_url=null; the
+    // handler fills it in on upload ACK.
+    async function stageAttendancePhoto(): Promise<void> {
+      if (!attendancePhoto) return;
+      const blobId = await storeBlob(attendancePhoto.file);
+      await enqueue('photo.upload', {
+        key: secretKey,
+        blob_id: blobId,
+        session_id: sessionId,
+        target: 'attendance',
+      }, { dedupeKey: `photo.upload.${blobId}` });
     }
 
     function closeNow(withEvidence: boolean) {
@@ -307,15 +309,6 @@ export default function Runner({
         if (sigEmpty) { setErr('Signature is required.'); return; }
       }
       startTransition(async () => {
-        // Attendance upload still happens inline — binary blobs stay off
-        // the queue for Phase A of FMX-068 (see FMX-072 for the next step).
-        let attendanceUrl: string | null = null;
-        try {
-          attendanceUrl = await uploadAttendance();
-        } catch (e: any) {
-          setErr(`Attendance photo upload failed: ${e?.message || e}`);
-          return;
-        }
         const signatureDataUrl = sigRef.current && !sigRef.current.isEmpty()
           ? sigRef.current.toDataURL()
           : null;
@@ -324,19 +317,21 @@ export default function Runner({
           : `CLOSED WITHOUT EVIDENCE — ${closeNoteInput.trim() || 'no reason given'}`;
 
         try {
-          // FMX-068: enqueue completeSession, then raiseDefects — two
-          // handlers so the second replays cleanly if the first succeeds
-          // and the tab drops before the second fires.
+          // FMX-068: completeSession lands with attendance_photo_url=null.
+          // FMX-072: the attendance photo stages to Dexie + enqueues
+          // photo.upload below; its handler attaches the URL on ACK.
           await enqueue('inspection.completeSession', {
             key: secretKey,
             session_id: sessionId,
             patch: {
               completed_at: new Date().toISOString(),
               signature_data_url: signatureDataUrl,
-              attendance_photo_url: attendanceUrl,
+              attendance_photo_url: null,
               notes,
             },
           }, { dedupeKey: `inspection.completeSession.${sessionId}` });
+
+          await stageAttendancePhoto();
 
           await enqueue('inspection.raiseDefects', {
             key: secretKey,
@@ -480,33 +475,15 @@ export default function Runner({
       return false;
     }
 
-    // Upload any new photos to Supabase Storage via a small helper endpoint.
-    let photoUrls: string[] = [];
-    if (draft.photos.length > 0) {
-      try {
-        const fd = new FormData();
-        for (const p of draft.photos) fd.append('photos', p.file);
-        fd.set('session_id', sessionId);
-        fd.set('item_id', item.id);
-        fd.set('key', secretKey);
-        const res = await fetch('/api/inspection-photo', { method: 'POST', body: fd });
-        if (!res.ok) throw new Error(`upload ${res.status}`);
-        const body = await res.json();
-        photoUrls = Array.isArray(body.urls) ? body.urls : [];
-      } catch (e: any) {
-        setErr(`Photo upload failed: ${e?.message || e}`);
-        return false;
-      }
-    }
-
-    // FMX-068: enqueue instead of await. The handler registered in
-    // FieldCaptureBoot calls the server action when online. Dedupe-keyed
-    // by (session, item) so re-answering an item collapses to one op.
+    // FMX-068/072: enqueue the answer first (no photo urls yet — they attach
+    // later via photo.upload handlers). Dedupe-keyed by (session, item) so
+    // re-answering an item collapses to one row.
+    const resultId = crypto.randomUUID();
     try {
       await enqueue('inspection.recordResult', {
         key: secretKey,
         result: {
-          id: crypto.randomUUID(),
+          id: resultId,
           session_id: sessionId,
           template_item_id: item.id,
           sort_order: item.sort_order,
@@ -515,7 +492,7 @@ export default function Runner({
           answer_bool: draft.answer_bool,
           answer_number: draft.answer_number,
           answer_text: draft.answer_text.trim() || null,
-          photo_urls: photoUrls,
+          photo_urls: [],                // photos attach via photo.upload
           failed: draft.failed,
           failure_reason: draft.failed ? 'Auto fail from fail_if rule' : null,
           answered_at: new Date().toISOString(),
@@ -525,9 +502,27 @@ export default function Runner({
       setErr(`Could not save answer: ${e?.message || e}`);
       return false;
     }
-    // Clear the photo buffer so Back then Next doesn't re-upload. The
-    // enqueue above resolves locally, so the UI advances immediately —
-    // sync status surfaces in the top-nav SyncIndicator.
+
+    // FMX-072: each photo → store the blob locally, enqueue photo.upload.
+    // Handler uploads + attaches the URL back onto the result row.
+    for (let i = 0; i < draft.photos.length; i++) {
+      const p = draft.photos[i];
+      try {
+        const blobId = await storeBlob(p.file);
+        await enqueue('photo.upload', {
+          key: secretKey,
+          blob_id: blobId,
+          session_id: sessionId,
+          target: 'result',
+          result_id: resultId,
+        }, { dedupeKey: `photo.upload.${blobId}` });
+      } catch (e: any) {
+        setErr(`Could not stage photo: ${e?.message || e}`);
+        return false;
+      }
+    }
+
+    // Clear the photo buffer so Back then Next doesn't re-stage the same files.
     setDraft({ photos: [] });
     return true;
   }

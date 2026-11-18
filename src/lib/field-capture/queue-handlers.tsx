@@ -11,11 +11,14 @@
 
 import { useEffect } from 'react';
 import { registerHandler, startRunner } from '@/lib/offline/queue';
+import { getBlob, deleteBlob } from '@/lib/offline/blobs';
 import {
   recordResult,
   completeSession,
   raiseDefectsFromSession,
   recordScan,
+  attachPhotoToResult,
+  attachAttendancePhoto,
 } from './actions';
 import type {
   InspectionResult,
@@ -69,7 +72,45 @@ function registerAll() {
     const r = await recordScan(p.scan, p.key);
     if (!r.ok) throw new Error(r.error);
   });
+
+  // photo.upload — FMX-072. Reads the pending blob by id, uploads to
+  // Supabase Storage via /api/inspection-photo, then attaches the URL to
+  // its target row (inspection result or session attendance). Idempotent:
+  // the attach actions dedupe URLs so a retry after a successful upload
+  // just no-ops. On success the local blob is evicted.
+  registerHandler('photo.upload', async (p: PhotoUploadPayload) => {
+    const blob = await getBlob(p.blob_id);
+    if (!blob) {
+      // Blob is gone — nothing to retry with. Treat as success so the
+      // queue clears rather than looping forever on a lost file.
+      return;
+    }
+    // Build the same multipart payload /api/inspection-photo already accepts.
+    const fd = new FormData();
+    fd.append('photos', new File([blob], `${p.blob_id}.jpg`, { type: blob.type || 'image/jpeg' }));
+    fd.set('session_id', p.session_id);
+    fd.set('item_id', p.target === 'result' ? p.result_id : 'attendance');
+    fd.set('key', p.key);
+    const res = await fetch('/api/inspection-photo', { method: 'POST', body: fd });
+    if (!res.ok) throw new Error(`upload ${res.status}`);
+    const body = await res.json();
+    const url: string | undefined = Array.isArray(body.urls) ? body.urls[0] : undefined;
+    if (!url) throw new Error('upload returned no url');
+    // Attach to the right target.
+    if (p.target === 'result') {
+      const r = await attachPhotoToResult(p.result_id, url, p.key);
+      if (!r.ok) throw new Error(r.error);
+    } else {
+      const r = await attachAttendancePhoto(p.session_id, url, p.key);
+      if (!r.ok) throw new Error(r.error);
+    }
+    // Local blob no longer needed.
+    await deleteBlob(p.blob_id);
+  });
 }
+
+type PhotoUploadPayload = { key: string; blob_id: string; session_id: string }
+  & ({ target: 'result'; result_id: string } | { target: 'attendance'; result_id?: never });
 
 // Mount in the root layout so the handlers are live before any
 // field-capture action is enqueued.

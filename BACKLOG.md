@@ -750,7 +750,22 @@ These are each S-sized — the pattern is: write a thin server-action wrapper th
 
 ### [FMX-072] Offline photo pipeline (inspection + attendance)
 
-- Type: story · Size: M · Status: next · Part of: FMX-068
+- Type: story · Size: M · Status: done 2026-11-18 · Part of: FMX-068
+
+**Done notes:**
+
+- **Dexie v2 migration** — new `blobs` table on the `fmx` database (`id, blob, mime, size, createdAt`). Dexie preserves the v1 queue + kv tables across the version bump.
+- **`src/lib/offline/blobs.ts`** — three helpers: `storeBlob(blob)` returns a client uuid; `getBlob(id)` reads it back; `deleteBlob(id)` evicts on ACK.
+- **`photo.upload` queue handler** — reads the blob by id, POSTs to `/api/inspection-photo`, dispatches to the right attach action based on `target`:
+  - `target: 'result'` → `attachPhotoToResult(resultId, url, key)` (appends to `inspection_results.photo_urls`, deduped so retries no-op)
+  - `target: 'attendance'` → `attachAttendancePhoto(sessionId, url, key)` (sets `inspection_sessions.attendance_photo_url`)
+  - On success the local blob is evicted from IndexedDB. If the blob is missing (e.g. storage cleared), the handler treats it as success rather than looping forever.
+- **Two new server actions** — `attachPhotoToResult` + `attachAttendancePhoto` in `src/lib/field-capture/actions.ts`. Both idempotent.
+- **Runner migration** — per-item photos now `storeBlob()` the compressed file + `enqueue('photo.upload', { target: 'result', result_id, session_id, blob_id })`. The result row commits with `photo_urls: []`; the handler attaches each URL as it uploads.
+- **Attendance photo migration** — `completeSession` lands with `attendance_photo_url: null` and the attendance photo stages to IndexedDB via `stageAttendancePhoto()`; handler fills the URL on upload ACK.
+- **End state:** a full inspection run including photos works offline. Inspector captures photos on the plane / underground / in the bush → session + answers queue locally → photos stage to IndexedDB → everything flushes when connectivity returns. Sync chip in the nav shows pending count throughout.
+
+**Dropped from AC as unneeded for current ship:** per-photo sync chip on each preview. The global nav indicator covers the "am I synced" question at the level users actually ask it. If per-photo granularity becomes important, raise a follow-up.
 
 **AC**
 

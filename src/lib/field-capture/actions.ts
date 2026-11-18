@@ -268,6 +268,51 @@ export async function raiseDefectsFromSession(
   return { ok: true, data: { created, skipped } };
 }
 
+// ---- FMX-072: attach late-arriving photo URLs --------------------------
+//
+// The offline photo pipeline uploads a blob after its owning row has
+// already been saved. These actions push the resolved URL back into the
+// right target column so the UI eventually catches up.
+
+export async function attachPhotoToResult(
+  resultId: string,
+  url: string,
+  key: string,
+): Promise<Res> {
+  if (!auth(key)) return { ok: false, error: 'Not authorised.' };
+  if (!resultId || !url) return { ok: false, error: 'Missing result id or url.' };
+  // Read-then-write — Postgres doesn't have an atomic array-append RPC
+  // here without adding one, and these writes are rare + small.
+  const { data: row } = await supabaseServer
+    .from('inspection_results')
+    .select('photo_urls')
+    .eq('id', resultId)
+    .maybeSingle();
+  const existing: string[] = Array.isArray(row?.photo_urls) ? row!.photo_urls : [];
+  if (existing.includes(url)) return { ok: true };   // idempotent
+  const { error } = await supabaseServer
+    .from('inspection_results')
+    .update({ photo_urls: [...existing, url] })
+    .eq('id', resultId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function attachAttendancePhoto(
+  sessionId: string,
+  url: string,
+  key: string,
+): Promise<Res> {
+  if (!auth(key)) return { ok: false, error: 'Not authorised.' };
+  if (!sessionId || !url) return { ok: false, error: 'Missing session id or url.' };
+  const { error } = await supabaseServer
+    .from('inspection_sessions')
+    .update({ attendance_photo_url: url })
+    .eq('id', sessionId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
 // ---- readings -----------------------------------------------------------
 
 export async function recordReading(payload: Reading, key: string): Promise<Res> {

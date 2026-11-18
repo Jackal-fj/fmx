@@ -41,16 +41,35 @@ export type KvEntry = {
   updatedAt: number;
 };
 
+// --- FMX-072: pending photo blobs ---------------------------------------
+// Captured photos get written here first (offline-safe), then a `photo.upload`
+// queue entry carries the id to a handler that drains the blob to Supabase
+// Storage and attaches the resolved URL to its owning record.
+export type PendingBlob = {
+  id: string;         // client-assigned uuid, used as the queue payload reference
+  blob: Blob;         // Dexie supports Blob natively
+  mime: string;
+  size: number;
+  createdAt: number;
+};
+
 class FmxDb extends Dexie {
   queue!: Table<QueueEntry, number>;
   kv!: Table<KvEntry, string>;
+  blobs!: Table<PendingBlob, string>;
 
   constructor() {
     super('fmx');
-    // Keep version bumps rare; only when the schema changes.
+    // v1 — queue + kv (shipped with FMX-046).
     this.version(1).stores({
       queue: '++id, kind, status, nextAttemptAt, dedupeKey',
       kv: 'key',
+    });
+    // v2 — FMX-072 adds pending_blobs. Dexie preserves existing stores.
+    this.version(2).stores({
+      queue: '++id, kind, status, nextAttemptAt, dedupeKey',
+      kv: 'key',
+      blobs: 'id, createdAt',
     });
   }
 }
