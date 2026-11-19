@@ -1745,8 +1745,25 @@ Touched: `src/app/page.tsx`.
 
 ### [FMX-081] Tenant/client event audit log
 
-- Type: story · Size: S · Status: idea · Part of: FMX-024 · Depends on: FMX-074
+- Type: story · Size: S · Status: done 2026-11-19 · Part of: FMX-024 · Depends on: FMX-074
 
-**AC** — `audit_events` table for every tenant-initiated defect and every client-viewed page, with `(actor_kind, actor_id, action, target_table, target_id, at, ip, ua)`. Admin page `/audit` under Resources (gated by QUICK_ADD_SECRET) lists recent events with filters.
+**Done notes:**
+
+- **Migration `fmx_081_audit_events`** — single unified feed with `at`, `actor_kind`, `actor_id`, `actor_display`, `action`, `channel`, `target_table`, `target_id`, `target_ref`, `property_id`, `client_id`, `ip`, `user_agent`, `context` (jsonb). Indexes on `at desc`, `(actor_kind, at desc)`, `(action, at desc)`, `(target_table, target_id)`. Columns are self-contained (target_ref, actor_display) so the audit page renders without joins.
+- **New `src/lib/audit/log.ts`** — one `logAudit(event)` helper. Best-effort — never throws, never blocks the surrounding operation. `ActorKind = 'tenant' | 'client_viewer' | 'fm_admin' | 'system' | 'provider'`; `Channel = 'email' | 'whatsapp' | 'google_chat' | 'web' | null`.
+- **Hooks landed:**
+  - **WhatsApp intake** (`/api/whatsapp/inbound`) — logs `tenant_message.received` with the wa_id, display name, matched defect + property.
+  - **Google Chat intake** — logs `tenant_message.received` with sender email, space name, matched defect + property.
+  - **Client viewer page** (`/client/[short_code]`) — logs `client_viewer.page_view` with token id, token label, IP, user-agent, client_id.
+  - **Client viewer report download** (`getClientReportDownloadUrl`) — logs `client_viewer.report_download` with the report id + storage path.
+  - **Outbound WhatsApp send** — logs `tenant_message.sent` after Meta confirms with `external_message_id`.
+  - **Outbound Chat send** — logs `tenant_message.sent` after Chat confirms with the Chat message name.
+  - **Outbound skip** — logs `tenant_message.skipped` with the channel + target.
+- **New admin page `/audit`** (Resources → Audit, QUICK_ADD_SECRET-gated) — filter chips for actor_kind, action, recency (7/30/90 days). Counts next to each actor/action label so Carl sees the shape of activity before drilling. Last 500 rows in the window.
+- **Deliberate non-hooks:**
+  - Email intake not yet logged — email already has `email_inbox` with rich classification; adding a 3-line hook is a follow-up when Carl wants email in the unified view.
+  - FM-admin writes (defect CRUD, agreement edits, inspection results) not logged. Those already leave audit trails in their own tables (`defect_updates`, `write_conflicts`) and are inside the trust boundary. Add later if a compliance ask arrives.
+- **Nav + i18n** — Resources → Audit, `nav.audit = 'Audit'`.
+- **TypeScript compiles clean.**
 
 ---

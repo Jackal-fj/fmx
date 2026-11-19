@@ -8,6 +8,7 @@
 
 import { supabaseServer } from '@/lib/supabase';
 import { resolveClientFromToken } from '@/lib/client-access/tokens';
+import { logAudit } from '@/lib/audit/log';
 
 export async function getClientReportDownloadUrl(
   storagePath: string,
@@ -44,5 +45,20 @@ export async function getClientReportDownloadUrl(
     .from('reports')
     .createSignedUrl(storagePath, 60 * 60); // 1 hour
   if (error || !data) return { url: null, error: error?.message || 'Signed URL failed.' };
+
+  // FMX-081: audit the report download request.
+  await logAudit({
+    actor_kind: 'client_viewer',
+    actor_id: scope.token_id,
+    actor_display: scope.token_label,
+    action: 'client_viewer.report_download',
+    channel: 'web',
+    target_table: 'report_runs',
+    target_id: row.id as string,
+    target_ref: storagePath,
+    client_id: scope.client_id,
+    context: { storage_path: storagePath },
+  });
+
   return { url: data.signedUrl };
 }

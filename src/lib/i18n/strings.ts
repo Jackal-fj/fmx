@@ -41,6 +41,7 @@ export type Strings = {
     metrics: string;
     conflicts: string;
     tenantOutbound: string;
+    audit: string;
   };
   add: {
     aria: string;
@@ -94,6 +95,7 @@ const en: Strings = {
     metrics: 'Metrics',
     conflicts: 'Conflicts',
     tenantOutbound: 'Tenant outbound',
+    audit: 'Audit',
   },
   add: {
     aria: 'New record',

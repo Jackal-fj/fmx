@@ -3,6 +3,7 @@ import { unstable_noStore as noStore } from 'next/cache';
 import { cookies, headers } from 'next/headers';
 import { resolveClientFromToken } from '@/lib/client-access/tokens';
 import { supabaseServer } from '@/lib/supabase';
+import { logAudit } from '@/lib/audit/log';
 import ReportDownload from './report-download';
 
 export const dynamic = 'force-dynamic';
@@ -121,6 +122,23 @@ export default async function ClientLanding({
   // mint a signed URL server-side. We pass it to the client component; it's the
   // same token the viewer already holds in their cookie, so nothing new leaks.
   const activeToken = candidate;
+
+  // FMX-081: audit the client-viewer page load. Best-effort; never blocks
+  // the render. User agent + IP captured so Carl can see where access came
+  // from on /audit.
+  await logAudit({
+    actor_kind: 'client_viewer',
+    actor_id: scope.token_id,
+    actor_display: scope.token_label,
+    action: 'client_viewer.page_view',
+    channel: 'web',
+    target_table: 'clients',
+    target_id: scope.client_id,
+    target_ref: scope.client_short_code,
+    client_id: scope.client_id,
+    ip,
+    user_agent: headerStore.get('user-agent'),
+  });
 
   const sb = supabaseServer;
   const clientId = scope.client_id;

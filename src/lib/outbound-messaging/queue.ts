@@ -17,6 +17,7 @@ import { supabaseServer } from '@/lib/supabase';
 import { lookupOutboundRoute } from '@/lib/tenant-routing/resolve';
 import { sendWhatsAppText } from '@/lib/whatsapp/client';
 import { sendChatMessage } from '@/lib/google-chat/client';
+import { logAudit } from '@/lib/audit/log';
 
 type Trigger = 'work_ordered' | 'resolved';
 
@@ -151,6 +152,16 @@ export async function sendQueuedOutbound(id: string): Promise<OutboundSendResult
       .from('outbound_tenant_messages')
       .update({ status: 'sent', sent_at: new Date().toISOString(), external_message_id: r.message_id })
       .eq('id', id);
+    await logAudit({
+      actor_kind: 'fm_admin',
+      action: 'tenant_message.sent',
+      channel: 'whatsapp',
+      target_table: 'outbound_tenant_messages',
+      target_id: id,
+      target_ref: msg.target_sender_id as string,
+      property_id: msg.property_id as string,
+      context: { external_message_id: r.message_id },
+    });
     return { ok: true };
   }
 
@@ -177,6 +188,16 @@ export async function sendQueuedOutbound(id: string): Promise<OutboundSendResult
       .from('outbound_tenant_messages')
       .update({ status: 'sent', sent_at: new Date().toISOString(), external_message_id: r.message_name })
       .eq('id', id);
+    await logAudit({
+      actor_kind: 'fm_admin',
+      action: 'tenant_message.sent',
+      channel: 'google_chat',
+      target_table: 'outbound_tenant_messages',
+      target_id: id,
+      target_ref: msg.target_sender_id as string,
+      property_id: msg.property_id as string,
+      context: { external_message_id: r.message_name },
+    });
     return { ok: true };
   }
 
@@ -193,12 +214,28 @@ export async function sendQueuedOutbound(id: string): Promise<OutboundSendResult
  * Mark a queued row skipped (FM chose not to send). Keeps the row for audit.
  */
 export async function skipQueuedOutbound(id: string): Promise<OutboundSendResult> {
+  const { data: msg } = await supabaseServer
+    .from('outbound_tenant_messages')
+    .select('channel, target_sender_id, property_id')
+    .eq('id', id)
+    .maybeSingle();
   const { error } = await supabaseServer
     .from('outbound_tenant_messages')
     .update({ status: 'skipped', skipped_at: new Date().toISOString() })
     .eq('id', id)
     .eq('status', 'queued');
   if (error) return { ok: false, error: error.message };
+  if (msg) {
+    await logAudit({
+      actor_kind: 'fm_admin',
+      action: 'tenant_message.skipped',
+      channel: msg.channel as any,
+      target_table: 'outbound_tenant_messages',
+      target_id: id,
+      target_ref: msg.target_sender_id as string | null,
+      property_id: (msg.property_id as string | null) ?? null,
+    });
+  }
   return { ok: true };
 }
 

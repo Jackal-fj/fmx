@@ -31,6 +31,7 @@ import {
 } from '@/lib/google-chat/client';
 import { classifyTrade } from '@/lib/trade/classify';
 import { resolveTenantRoute } from '@/lib/tenant-routing/resolve';
+import { logAudit } from '@/lib/audit/log';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -244,6 +245,20 @@ export async function POST(request: NextRequest) {
       reply_sent_at: new Date().toISOString(),
     })
     .eq('id', inboxRow.id);
+
+  // FMX-081: audit event for the tenant-initiated defect.
+  await logAudit({
+    actor_kind: 'tenant',
+    actor_id: senderEmail,
+    actor_display: senderDisplay,
+    action: 'tenant_message.received',
+    channel: 'google_chat',
+    target_table: 'defects',
+    target_id: newDefect.id as string,
+    target_ref: newDefect.defect_number as string,
+    property_id: property.id,
+    context: { attachments: attachments.length, trade: tradeGuess, space: space_name },
+  });
 
   return NextResponse.json(chatTextReply(replyText, threadName));
 }

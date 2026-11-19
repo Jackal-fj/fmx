@@ -27,6 +27,7 @@ import {
 } from '@/lib/whatsapp/client';
 import { classifyTrade } from '@/lib/trade/classify';
 import { resolveTenantRoute } from '@/lib/tenant-routing/resolve';
+import { logAudit } from '@/lib/audit/log';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -317,6 +318,20 @@ async function handleMessage(msg: any, ctx: MsgCtx): Promise<{ ok: boolean; note
       reply_sent_at,
     })
     .eq('id', inboxRow.id);
+
+  // FMX-081: audit event for the tenant-initiated defect.
+  await logAudit({
+    actor_kind: 'tenant',
+    actor_id: from,
+    actor_display: ctx.fromName,
+    action: 'tenant_message.received',
+    channel: 'whatsapp',
+    target_table: 'defects',
+    target_id: newDefect.id as string,
+    target_ref: newDefect.defect_number as string,
+    property_id: property.id,
+    context: { attachments: mediaIds.length, trade: tradeGuess, from_wa_id: from },
+  });
 
   return { ok: true, note: `draft ${newDefect.defect_number} on ${property.short_code}` };
 }
