@@ -1689,9 +1689,26 @@ Touched: `src/app/page.tsx`.
 
 ### [FMX-079] Tenant identification + property routing
 
-- Type: story · Size: M · Status: idea · Part of: FMX-024 · Depends on: FMX-077 or FMX-078
+- Type: story · Size: M · Status: done 2026-11-19 · Part of: FMX-024 · Depends on: FMX-077, FMX-078
 
-**AC** — Shared module: given (channel, sender_id), resolve to a tenancy + property, or return "unknown — ask FM". Caches last-known route per sender. First-time prompt flow uniform across both gateways.
+**Done notes:**
+
+- **Migration `fmx_079_tenant_route_cache`** — unique `(channel, sender_id)` index with `property_id`, `tenant_display_name`, `first_seen_at`, `last_seen_at`. One row per (channel, sender) for fast repeat-message resolution.
+- **New `src/lib/tenant-routing/resolve.ts`** — single shared module. Exports:
+  - `resolveTenantRoute({ channel, sender_id, sender_display_name? })` — cache → phone-digit match (WhatsApp) / email match (Chat, email) → fallback. Writes the cache on hit; returns `firstTimeKnown` so a caller can send a warmer first reply later.
+  - `lookupOutboundRoute(propertyId)` — inverse lookup for FMX-080. Preference order: most recent cache row on preferred channel → any cache row → property's tenant_contact_* field. Returns `{ channel, sender_id, source }` or null.
+  - `isFirstTimeUnknown(channel, sender_id)` — reads the per-gateway audit tables (`whatsapp_inbound`, `google_chat_inbound`) to tell callers whether this unknown sender has already been nudged in the last 7 days.
+  - `Channel`, `MatchedProperty`, `ResolveResult` types — shared across every gateway.
+- **WhatsApp route refactored** — `matchPropertyByPhone` + `alreadyRepliedUnknown` deleted; the route now calls `resolveTenantRoute` once and reads `route.firstTimeUnknown`. Behaviour identical; cache now keeps a reach-path for FMX-080.
+- **Google Chat route refactored** — `matchPropertyByEmail` deleted; same pattern. Chat's synchronous reply pattern now respects the 7-day unknown-sender window: the nudge only goes back on the HTTP response when we haven't already nudged this email across any gateway recently (returns empty 200 otherwise).
+- **Cross-gateway suppression works both ways now** — a tenant who tried WhatsApp yesterday and Chat today won't get two "ask your FM" nudges in a row.
+- **TypeScript compiles clean.**
+
+**Deliberate scope cuts:**
+
+- No dedicated UI for the cache. When FMX-081 (audit log) lands, the recent cache rows will show up there.
+- No cache invalidation yet when a property's tenant_contact_* changes. Easy to add as a trigger or saveProperty side-effect — flagged if stale cache rows become a real problem.
+- `email` as a routing channel is wired in the types + lookupOutboundRoute but no email-side first-time-unknown check reads from `email_inbox` yet (email already has its own classifySender path). Straightforward to add if the email intake path ever starts replying.
 
 ---
 

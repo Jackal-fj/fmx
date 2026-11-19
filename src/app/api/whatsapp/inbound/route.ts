@@ -26,6 +26,7 @@ import {
   normalisePhoneDigits,
 } from '@/lib/whatsapp/client';
 import { classifyTrade } from '@/lib/trade/classify';
+import { resolveTenantRoute } from '@/lib/tenant-routing/resolve';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -152,10 +153,16 @@ async function handleMessage(msg: any, ctx: MsgCtx): Promise<{ ok: boolean; note
   if (msg?.document?.id) mediaIds.push(msg.document.id);
   if (msg?.video?.id)    mediaIds.push(msg.video.id);   // we persist as attachment, not inline thumb
 
-  // 5. Sender → tenant → property. Normalise both sides so "+679 ..." from
-  //    the editor and "679..." from Meta's wa_id collapse to the same key.
+  // 5. Sender → tenant → property via the shared FMX-079 router. Normalises
+  //    the wa_id, checks the route cache, falls back to live phone match,
+  //    and writes the cache on hit so FMX-080 outbound has a reach-path.
   const fromDigits = normalisePhoneDigits(from);
-  const property = await matchPropertyByPhone(fromDigits);
+  const route = await resolveTenantRoute({
+    channel: 'whatsapp',
+    sender_id: fromDigits,
+    sender_display_name: ctx.fromName,
+  });
+  const property = route.matched ? route.property : null;
 
   // Trade guess — same classifier email uses, so the register stays consistent.
   const tradeGuess = classifyTrade(text_body || '', ctx.fromName || '') || null;
@@ -199,15 +206,13 @@ async function handleMessage(msg: any, ctx: MsgCtx): Promise<{ ok: boolean; note
     return { ok: false, note: insErr?.message || 'insert failed' };
   }
 
-  // 7. Unknown sender: one-time gentle reply, mark the row, bail out.
-  //    We check whether we've already replied to this wa_id so a flurry of
-  //    messages from an unknown number doesn't spam them with the same
-  //    message every time.
+  // 7. Unknown sender: one-time gentle reply (first-time-unknown rule lives
+  //    in the shared router so the window is honoured across every gateway),
+  //    mark the row, bail out.
   if (!property) {
-    const alreadyReplied = await alreadyRepliedUnknown(from);
     let reply_text: string | null = null;
     let reply_sent_at: string | null = null;
-    if (!alreadyReplied) {
+    if (!route.matched && route.firstTimeUnknown) {
       const copy =
         `Hi${ctx.fromName ? ` ${ctx.fromName}` : ''} — we don't recognise this number on the FMX register yet. ` +
         `Please ask your Facility Manager to add your contact number so your messages land on the right property.`;
@@ -316,55 +321,4 @@ async function handleMessage(msg: any, ctx: MsgCtx): Promise<{ ok: boolean; note
   return { ok: true, note: `draft ${newDefect.defect_number} on ${property.short_code}` };
 }
 
-// ---------------------------------------------------------------------------
-// Sender match
-// ---------------------------------------------------------------------------
-
-type MatchedProperty = {
-  id: string;
-  short_code: string;
-  tenant_name: string | null;
-};
-
-async function matchPropertyByPhone(fromDigits: string): Promise<MatchedProperty | null> {
-  if (!fromDigits) return null;
-  // Pull every active property with a tenant_contact_phone. For a single-FM
-  // portfolio this is tens of rows — fine to scan in memory. A real production
-  // multi-tenant setup would push the normalisation into Postgres with a
-  // generated column + index; mark that as a follow-up if the row count ever
-  // approaches four digits.
-  const { data: rows } = await supabaseServer
-    .from('properties')
-    .select('id, short_code, tenant_name, tenant_contact_phone, tenant_preferred_channel')
-    .eq('active', true)
-    .not('tenant_contact_phone', 'is', null);
-
-  for (const r of (rows || [])) {
-    const propDigits = normalisePhoneDigits(r.tenant_contact_phone as string);
-    if (!propDigits) continue;
-    // Match on exact digits OR suffix (last 8 digits) — Fiji numbers are 7
-    // digits; carriers sometimes present "679..." and sometimes "+679..." and
-    // some tenants write the number with or without the country code. The
-    // suffix match catches both without being so loose that two numbers with
-    // a shared 5-digit tail collide.
-    if (propDigits === fromDigits) return r as MatchedProperty;
-    if (propDigits.length >= 8 && fromDigits.endsWith(propDigits.slice(-8))) return r as MatchedProperty;
-    if (fromDigits.length >= 8 && propDigits.endsWith(fromDigits.slice(-8))) return r as MatchedProperty;
-  }
-  return null;
-}
-
-async function alreadyRepliedUnknown(fromDigits: string): Promise<boolean> {
-  // Did we reply to this unknown wa_id in the last 7 days?
-  const since = new Date(Date.now() - 7 * 86400000).toISOString();
-  const { data } = await supabaseServer
-    .from('whatsapp_inbound')
-    .select('id')
-    .eq('from_wa_id', fromDigits)
-    .eq('status', 'unknown_sender')
-    .not('reply_sent_at', 'is', null)
-    .gte('reply_sent_at', since)
-    .limit(1)
-    .maybeSingle();
-  return !!data;
-}
+// Sender match + unknown-sender suppression live in `src/lib/tenant-routing/resolve.ts` (FMX-079).

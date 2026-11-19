@@ -30,6 +30,7 @@ import {
   chatTextReply,
 } from '@/lib/google-chat/client';
 import { classifyTrade } from '@/lib/trade/classify';
+import { resolveTenantRoute } from '@/lib/tenant-routing/resolve';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -96,9 +97,13 @@ export async function POST(request: NextRequest) {
     return new Response(null, { status: 200 });
   }
 
-  // 4. Match sender → property. Email is the primary key for Google Chat
-  //    (every user is an authenticated org identity).
-  const property = senderEmail ? await matchPropertyByEmail(senderEmail) : null;
+  // 4. Match sender → property via the shared FMX-079 router. Writes the
+  //    cache on hit so FMX-080 outbound has a reach-path, and reads the
+  //    cache on repeat messages so the match short-circuits.
+  const route = senderEmail
+    ? await resolveTenantRoute({ channel: 'google_chat', sender_id: senderEmail, sender_display_name: senderDisplay })
+    : null;
+  const property = route?.matched ? route.property : null;
   const tradeGuess = classifyTrade(text_body || '', senderDisplay || '') || null;
 
   const classification = {
@@ -138,8 +143,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(chatTextReply("Logged, but something went wrong on my side. Please check with your FM."), { status: 200 });
   }
 
-  // 6. Unknown sender: friendly nudge, mark row, no defect created.
+  // 6. Unknown sender: nudge once per 7 days across both gateways (rule
+  //    lives in the FMX-079 router). Chat doesn't need the silent "sent
+  //    silently" update because every reply is synchronous — we either
+  //    speak back on this HTTP response or we don't speak at all.
   if (!property) {
+    // route is null only when senderEmail was blank; treat that as first-time
+    // so the sender at least gets told to sign in with a real org email.
+    const nudge = !route || (!route.matched && route.firstTimeUnknown);
     const replyText = senderDisplay
       ? `Hi ${senderDisplay} — I don't recognise your email on the FMX register yet. Please ask your Facility Manager to add ${senderEmail || 'your email'} to your property record and try again.`
       : `I don't recognise your email on the FMX register yet. Please ask your Facility Manager to add it to your property record and try again.`;
@@ -147,11 +158,13 @@ export async function POST(request: NextRequest) {
       .from('google_chat_inbound')
       .update({
         status: 'unknown_sender',
-        reply_text: replyText,
-        reply_sent_at: new Date().toISOString(),
+        reply_text: nudge ? replyText : null,
+        reply_sent_at: nudge ? new Date().toISOString() : null,
       })
       .eq('id', inboxRow.id);
-    return NextResponse.json(chatTextReply(replyText, threadName));
+    return nudge
+      ? NextResponse.json(chatTextReply(replyText, threadName))
+      : new Response(null, { status: 200 });
   }
 
   // 7. Known sender → create DRAFT defect.
@@ -235,27 +248,11 @@ export async function POST(request: NextRequest) {
   return NextResponse.json(chatTextReply(replyText, threadName));
 }
 
+// Sender match lives in `src/lib/tenant-routing/resolve.ts` (FMX-079).
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-type MatchedProperty = {
-  id: string;
-  short_code: string;
-  tenant_name: string | null;
-};
-
-async function matchPropertyByEmail(email: string): Promise<MatchedProperty | null> {
-  const normalised = email.trim().toLowerCase();
-  if (!normalised) return null;
-  const { data } = await supabaseServer
-    .from('properties')
-    .select('id, short_code, tenant_name, tenant_contact_email, tenant_preferred_channel')
-    .eq('active', true)
-    .ilike('tenant_contact_email', normalised)
-    .maybeSingle();
-  return (data as MatchedProperty | null) ?? null;
-}
 
 async function logLifecycle(event: any, markerType: string): Promise<void> {
   const messageName = `lifecycle/${markerType}/${event?.space?.name || 'unknown'}/${event?.eventTime || Date.now()}`;
