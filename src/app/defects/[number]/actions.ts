@@ -2,6 +2,7 @@
 
 import { supabaseServer } from '@/lib/supabase';
 import { revalidatePath } from 'next/cache';
+import { mergePatch, logConflicts } from '@/lib/offline/merge';
 
 const MAX_APPEND = 10;
 
@@ -9,23 +10,52 @@ const MAX_APPEND = 10;
 // change `defects.trade` without having to go through /update-defect (which
 // insists on a status change + photo evidence). Used mainly to backfill the
 // ~60 defects the FMX-021 classifier couldn't confidently tag.
+//
+// FMX-051 extension: now routed through mergePatch so a baseline_updated_at
+// (optional) can detect concurrent edits once FMX-024's intake paths bring
+// real concurrency.
 export async function setDefectTrade(
   defectNumber: string,
   trade: string,
   secretKey: string,
+  baselineUpdatedAt?: string | null,
 ): Promise<{ ok: boolean; error?: string }> {
   const required = process.env.QUICK_ADD_SECRET;
   if (!required || secretKey !== required) {
     return { ok: false, error: 'Not authorised.' };
   }
-  const clean = (trade || '').trim();
+  const clean = (trade || '').trim() || null;
+
+  // Read current row so the merge layer has a baseline.
+  const { data: current, error: readErr } = await supabaseServer
+    .from('defects')
+    .select('id, trade, updated_at')
+    .eq('defect_number', defectNumber)
+    .maybeSingle();
+  if (readErr) return { ok: false, error: readErr.message };
+  if (!current) return { ok: false, error: 'Defect not found.' };
+
+  const { toApply, conflicts } = mergePatch(
+    'defects',
+    current as unknown as Record<string, unknown>,
+    { trade: clean },
+    baselineUpdatedAt ?? null,
+  );
+  if (Object.keys(toApply).length === 0) {
+    return { ok: true };
+  }
+  toApply.updated_at = new Date().toISOString();
+
   const { error } = await supabaseServer
     .from('defects')
-    .update({ trade: clean || null })
-    .eq('defect_number', defectNumber);
-  if (error) {
-    return { ok: false, error: error.message };
+    .update(toApply)
+    .eq('id', current.id);
+  if (error) return { ok: false, error: error.message };
+
+  if (conflicts.length > 0) {
+    await logConflicts('defects', current.id as string, conflicts, { defect_number: defectNumber });
   }
+
   revalidatePath(`/defects/${defectNumber}`);
   revalidatePath('/defects');
   return { ok: true };
@@ -91,11 +121,27 @@ export async function appendDefectPhotos(
     return { ok: false, error: 'Upload failed for every photo.' };
   }
 
+  // FMX-051 extension: route through mergePatch so photo_urls set-union
+  // across this write and any concurrent write (e.g. an inbound intake that
+  // adds new photos between our read and our write) survive — union is the
+  // declared strategy for defects.photo_urls.
+  const { toApply, conflicts } = mergePatch(
+    'defects',
+    { photo_urls: existing, updated_at: (defect as any).updated_at ?? null } as Record<string, unknown>,
+    { photo_urls: [...existing, ...added] },
+    null,
+  );
+  toApply.updated_at = new Date().toISOString();
+
   const { error: patchErr } = await supabaseServer
     .from('defects')
-    .update({ photo_urls: [...existing, ...added] })
+    .update(toApply)
     .eq('id', defect.id);
   if (patchErr) return { ok: false, error: patchErr.message };
+
+  if (conflicts.length > 0) {
+    await logConflicts('defects', defect.id as string, conflicts, { defect_number: defect.defect_number });
+  }
 
   const num = defectNumber || defect.defect_number;
   revalidatePath(`/defects/${num}`);

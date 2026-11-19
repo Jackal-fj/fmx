@@ -4,6 +4,7 @@ import { supabaseServer } from '@/lib/supabase';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { queueStatusUpdatePush } from '@/lib/outbound-messaging/queue';
+import { mergePatch, logConflicts } from '@/lib/offline/merge';
 
 type UpdateResult = {
   ok: boolean;
@@ -39,7 +40,7 @@ export async function applyDefectStatusUpdate(input: {
 
   const { data: defect } = await supabaseServer
     .from('defects')
-    .select('id, status, photo_urls')
+    .select('id, status, photo_urls, updated_at')
     .eq('id', input.defect_id)
     .maybeSingle();
   if (!defect) return { ok: false, error: 'Defect not found' };
@@ -59,10 +60,18 @@ export async function applyDefectStatusUpdate(input: {
     });
   if (auditErr) return { ok: false, error: `Audit log failed: ${auditErr.message}` };
 
-  const mergedPhotos = Array.from(new Set([...existingPhotos, ...input.photo_urls]));
+  // FMX-051 extension: photo_urls union goes through mergePatch so a
+  // concurrent intake path appending photos doesn't lose them. Status is
+  // LWW (that's correct — the FM's status flip is the source of truth).
+  const { toApply, conflicts } = mergePatch(
+    'defects',
+    { photo_urls: existingPhotos, updated_at: (defect as any).updated_at ?? null } as Record<string, unknown>,
+    { photo_urls: [...existingPhotos, ...input.photo_urls] },
+    null,
+  );
   const updatePayload: Record<string, any> = {
+    ...toApply,
     status: input.new_status,
-    photo_urls: mergedPhotos,
     updated_at: new Date().toISOString(),
   };
   if (input.new_status === 'resolved') {
@@ -75,6 +84,10 @@ export async function applyDefectStatusUpdate(input: {
     .update(updatePayload)
     .eq('id', defect.id);
   if (defectErr) return { ok: false, error: `Status update failed: ${defectErr.message}` };
+
+  if (conflicts.length > 0) {
+    await logConflicts('defects', defect.id as string, conflicts, { defect_number: input.defect_number, trigger: 'status_update' });
+  }
 
   // FMX-080: queue a tenant-facing status push for FM approval. Only fire
   // when the transition is a real forward step — a repeat flip to the same

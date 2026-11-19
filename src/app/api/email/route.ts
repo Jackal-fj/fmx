@@ -27,6 +27,7 @@ import {
   type PostmarkInbound,
 } from '@/lib/postmark';
 import { classifyTrade } from '@/lib/trade/classify';
+import { logAudit } from '@/lib/audit/log';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -228,6 +229,26 @@ export async function POST(request: NextRequest) {
       }
       createdDefectId = newDefect.id;
       defectNumberForMirror = newDefect.defect_number;
+
+      // FMX-081 extension: audit event for the email-initiated defect.
+      await logAudit({
+        actor_kind: senderInfo.kind === 'operator' ? 'fm_admin' : 'tenant',
+        actor_id: effectiveFromEmail,
+        actor_display: effectiveFromName,
+        action: 'tenant_message.received',
+        channel: 'email',
+        target_table: 'defects',
+        target_id: newDefect.id as string,
+        target_ref: newDefect.defect_number as string,
+        property_id: propertyId,
+        context: {
+          subject,
+          sender_kind: senderInfo.kind,
+          property_source: propertyGuessFromText ? 'body_keyword' : (senderInfo.tenant_property ? 'tenant_domain' : null),
+          attachment_count: (payload.Attachments || []).length,
+          trade: tradeGuess,
+        },
+      });
     }
 
     // 7. Image attachments → Supabase Storage → appended to defect photos.

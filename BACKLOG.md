@@ -1031,9 +1031,11 @@ These are each S-sized — the pattern is: write a thin server-action wrapper th
 - **`resolveConflict` server action** writes the chosen value back through a column-scoped UPDATE (bumps `updated_at`), stamps `resolution` + `resolved_at` on the conflict row.
 - **No silent discards** — design principle #9 holds: every anomaly the merge catches leaves evidence Carl can review.
 
+**Follow-up landed 2026-11-19:** `setDefectTrade`, `appendDefectPhotos`, and `applyDefectStatusUpdate` are now all routed through `mergePatch`. Photo_urls writes use set-union (prevents duplicate URLs on retry and preserves photos appended by a concurrent intake path); trade goes through LWW with optional `baselineUpdatedAt` for conflict detection; status stays LWW (the FM's status flip is the authoritative decision). FMX-024 is complete — real concurrency between inbound intake + FM admin writes is now possible, which is why this closed.
+
 **Not done (deliberate scope cuts):**
 
-- `defect.trade.set`, `defect.status.update`, `defect.photos.append` still bypass the merge layer. Trade + status are already LWW by nature and photos are append-only, so merge value is low; wire them through when FMX-024 (multi-audience) lands and real concurrency arrives.
+- `defect.trade.set` queue payload type doesn't yet carry `baseline_updated_at` — threading it through from defect-page editors is a small follow-up. Without it, the merge still applies strategies on photo_urls and other non-LWW columns; only the LWW-conflict detection is dormant.
 - No `baseline_updated_at` on the Agreement type's row yet (Postgres default is now() on insert, update() bump in the action). Legacy rows with NULL `updated_at` still work — the merge just skips conflict detection for them.
 - `/conflicts` page shows raw JSON values for complex columns. When the first real-world conflict lands, swap in a column-aware renderer (array diff, text diff) — kept simple for now so the data model lands first.
 
@@ -1317,7 +1319,7 @@ Split complete. Seven stories below carry the work. FMX-052 and FMX-054 can star
 
 ### [FMX-042] Epic — The hero workflow: Scan → Check → Snap → Done → Report
 
-- Type: epic · Size: L (split before building) · Status: idea · Raised: 2026-11-17 · Depends on: FMX-041
+- Type: epic · Size: L · Status: done 2026-11-18 (split into FMX-052..058, all shipped) · Raised: 2026-11-17 · Depends on: FMX-041
 
 **As** an FM / inspector / contractor
 **I want** to open the app, scan a QR on a site or asset, answer a short checklist, take photos, tap Done
@@ -1761,8 +1763,9 @@ Touched: `src/app/page.tsx`.
   - **Outbound skip** — logs `tenant_message.skipped` with the channel + target.
 - **New admin page `/audit`** (Resources → Audit, QUICK_ADD_SECRET-gated) — filter chips for actor_kind, action, recency (7/30/90 days). Counts next to each actor/action label so Carl sees the shape of activity before drilling. Last 500 rows in the window.
 - **Deliberate non-hooks:**
-  - Email intake not yet logged — email already has `email_inbox` with rich classification; adding a 3-line hook is a follow-up when Carl wants email in the unified view.
   - FM-admin writes (defect CRUD, agreement edits, inspection results) not logged. Those already leave audit trails in their own tables (`defect_updates`, `write_conflicts`) and are inside the trust boundary. Add later if a compliance ask arrives.
+
+**Follow-up landed 2026-11-19:** email intake now emits `tenant_message.received` on draft creation, carrying the sender classification, property source, attachment count, and trade guess. All three intake channels (email, WhatsApp, Chat) now feed the same unified feed on `/audit`.
 - **Nav + i18n** — Resources → Audit, `nav.audit = 'Audit'`.
 - **TypeScript compiles clean.**
 
