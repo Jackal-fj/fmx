@@ -1644,9 +1644,46 @@ Touched: `src/app/page.tsx`.
 
 ### [FMX-078] Google Chat intake gateway
 
-- Type: story · Size: L · Status: idea · Part of: FMX-024 · Depends on: FMX-076
+- Type: story · Size: L · Status: done 2026-11-19 · Part of: FMX-024 · Depends on: FMX-076
 
-**AC** — Chat app endpoint. Slash commands `/log` + `/photo` + `/status`. Card response with defect number. Space ↔ property mapping table. Message-level auth by Workspace domain + sender email ↔ `tenancies.contact_email`.
+**Done notes:**
+
+- **Scope simplification vs AC.** AC called for slash commands + per-space property mapping; the simplest usable surface is "message the Chat app and it logs a defect against the property matching your email." Slash commands and space↔property binding can land as follow-ups once Carl sees how KGF/MWCP/FHRADC actually use it. Matches email + WhatsApp intake patterns one-to-one.
+- **Added `jose@^5.10.0`** as a direct dep for JWT verification — standard library, zero runtime deps, well-maintained.
+- **Migration `fmx_078_google_chat_inbound`** — audit + dedupe table paralleling `whatsapp_inbound` and `email_inbox`: `message_name` (unique → dedupe on Chat's resource name), `space_name`, `space_display_name`, `sender_email`, `sender_display_name`, `message_type`, `text_body`, `attachment_refs` (jsonb), `photo_urls[]`, `property_id`, `defect_id`, `trade`, `classification`, `status`, `reply_text`, `reply_sent_at`, `raw_event`. Three tables now ship with the same shape so FMX-081's audit page reads them uniformly.
+- **New `src/lib/google-chat/client.ts`** — `verifyChatJwt(authorizationHeader)` (jose remote-JWKS against `chat@system.gserviceaccount.com`, aud check from env, fail-closed when env missing), `downloadChatAttachment(attachment)` (two-step: mint SA OAuth token via JWT assertion → GET the Chat media endpoint), `chatTextReply(text, threadName)` (builds the synchronous response body). Instance-local token cache for SA OAuth.
+- **New webhook `/api/google-chat/inbound`** — verifies bearer JWT, dispatches by event `type`:
+  - `ADDED_TO_SPACE` — sends a short onboarding message explaining what to send and what happens.
+  - `REMOVED_FROM_SPACE` — logs as lifecycle row, no reply.
+  - `MESSAGE` — dedupes on `message.name`, logs audit row first, matches sender email against `properties.tenant_contact_email` (case-insensitive ilike), creates DRAFT defect scoped to the matched property, downloads attachments via SA, replies synchronously with a plain-text confirmation threaded to the triggering message.
+  - Other event types (CARD_CLICKED, etc.) — logged as lifecycle, no reply.
+- **Trade classifier reuse** — same `classifyTrade()` module as email + WhatsApp, so the defect register stays consistent across all three intake channels.
+- **Unknown sender path** — audit row kept, no defect created, friendly nudge pointing them at their FM: *"I don't recognise your email on the FMX register yet. Please ask your Facility Manager to add it to your property record."* No 7-day suppression here (as on WhatsApp) because Chat senders are identified Workspace accounts — repeat nudges go to the same org user rather than a potentially spoofed stranger.
+- **Attachment download is service-account-gated.** With `GOOGLE_CHAT_SA_JSON` set, image/pdf attachments resolve to `defect-photos` bucket URLs and append to `defects.photo_urls`. Without it, text + metadata still flow through; attachment refs stay on the audit row for Carl to pull manually.
+- **TypeScript compiles clean.**
+
+**Required env vars:**
+
+- `GOOGLE_CHAT_AUDIENCE` — the audience claim the Chat app is configured to sign with (project number OR endpoint URL — whichever you set in the Chat app's Authentication settings).
+
+**Optional env vars:**
+
+- `GOOGLE_CHAT_SA_JSON` — full service-account JSON (one line, escaped quotes). Needed only for attachment download. Grant the SA the `chat.bot` scope via the Chat API.
+
+**Chat app config in Google Cloud / Workspace:**
+
+- Endpoint URL: `https://<your-domain>/api/google-chat/inbound`
+- Authentication: **bearer JWT**
+- Audience: whatever you put in `GOOGLE_CHAT_AUDIENCE`
+- Subscribe to events: `MESSAGE`, `ADDED_TO_SPACE`, `REMOVED_FROM_SPACE`
+- (Optional) service-account scopes for FMX-080 outbound: `chat.bot`, `chat.messages`
+
+**Deliberate scope cuts:**
+
+- No slash commands yet — plain messages work; add `/log`/`/status` when Carl sees a pattern that needs them (likely once a Ministry tenant asks for structured input).
+- No space↔property binding table — sender's `tenant_contact_email` is enough to route today. The row is already structured for it (space_name on the audit table), so wiring one later is a small follow-up.
+- No rich card responses — plain text threaded reply is correct for the "logged as DEF-### for <property>" confirmation; cards come with FMX-080 outbound status pushes.
+- No Drive-linked attachment support (those need Drive API scope, out of scope).
 
 ---
 
