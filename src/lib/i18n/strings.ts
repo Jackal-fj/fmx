@@ -40,6 +40,7 @@ export type Strings = {
     scan: string;
     metrics: string;
     conflicts: string;
+    tenantOutbound: string;
   };
   add: {
     aria: string;
@@ -92,6 +93,7 @@ const en: Strings = {
     scan: 'Scan',
     metrics: 'Metrics',
     conflicts: 'Conflicts',
+    tenantOutbound: 'Tenant outbound',
   },
   add: {
     aria: 'New record',

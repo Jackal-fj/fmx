@@ -203,7 +203,6 @@ export async function downloadChatAttachment(
  * Build a Chat response payload for a synchronous webhook reply. Plain text
  * (threaded to the triggering message) is enough for the "logged as DEF-###"
  * confirmation and keeps us compatible with both standalone chats and spaces.
- * Richer cards can come later when FMX-080 lands.
  */
 export function chatTextReply(text: string, threadName?: string | null): object {
   const payload: Record<string, unknown> = { text };
@@ -211,4 +210,50 @@ export function chatTextReply(text: string, threadName?: string | null): object 
     payload.thread = { name: threadName };
   }
   return payload;
+}
+
+// ---------------------------------------------------------------------------
+// FMX-080: async outbound Chat send
+// ---------------------------------------------------------------------------
+
+/**
+ * Send a text message asynchronously into a Chat space, outside the webhook
+ * request cycle. Needs the service account. Returns the sent message's
+ * resource name on success. Used by FMX-080 to push status updates after an
+ * FM approves them on /tenant-outbound.
+ */
+export async function sendChatMessage(
+  spaceName: string,
+  text: string,
+  opts?: { threadName?: string | null },
+): Promise<{ ok: true; message_name: string } | { ok: false; error: string }> {
+  if (!spaceName || !spaceName.startsWith('spaces/')) {
+    return { ok: false, error: 'spaceName must look like spaces/<id>' };
+  }
+  const token = await getServiceAccountAccessToken('https://www.googleapis.com/auth/chat.bot');
+  if (!token) return { ok: false, error: 'service account not configured' };
+
+  const body: Record<string, unknown> = { text: text.slice(0, 4096) };
+  if (opts?.threadName) body.thread = { name: opts.threadName };
+
+  try {
+    const res = await fetch(
+      `https://chat.googleapis.com/v1/${encodeURI(spaceName)}/messages`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      },
+    );
+    const json = await res.json();
+    if (!res.ok) return { ok: false, error: json?.error?.message || `HTTP ${res.status}` };
+    const message_name = json?.name as string | undefined;
+    if (!message_name) return { ok: false, error: 'No message name returned' };
+    return { ok: true, message_name };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || 'send threw' };
+  }
 }

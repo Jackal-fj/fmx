@@ -1714,9 +1714,32 @@ Touched: `src/app/page.tsx`.
 
 ### [FMX-080] Outbound status notifications
 
-- Type: story · Size: M · Status: idea · Part of: FMX-024 · Depends on: FMX-079
+- Type: story · Size: M · Status: done 2026-11-19 · Part of: FMX-024 · Depends on: FMX-079
 
-**AC** — On defect transitions (`open → work_ordered`, `work_ordered → resolved`), send an outbound message on the tenancy's `preferred_channel`. WhatsApp uses approved templates; Chat uses cards. Carl's approval gate on the first N sends per channel.
+**Done notes:**
+
+- **Migration `fmx_080_outbound_tenant_messages`** — queue table with `channel`, `target_sender_id`, `thread_name`, `trigger`, `body`, `status` (queued/sent/skipped/failed/no_route), `queued_at`, `sent_at`, `skipped_at`, `external_message_id`, `error`. Indexed on (status, queued_at desc) for the review queue.
+- **New `src/lib/outbound-messaging/queue.ts`**:
+  - `queueStatusUpdatePush(defectId, trigger)` — idempotent per (defect, trigger); looks up the route via FMX-079's `lookupOutboundRoute`; if no route, logs a `'no_route'` row so Carl sees the missed notification. For Chat, surfaces the most recent inbound `thread.name` so replies land in context for the tenant.
+  - `sendQueuedOutbound(id)` — sends via `sendWhatsAppText` or the new async `sendChatMessage`, stamps `external_message_id`.
+  - `skipQueuedOutbound(id)` — soft skip; keeps the row for audit.
+  - Message bodies composed in one place — dispatched / resolved variants with greeting name + property code + defect title + explicit "reply here to re-open".
+- **`sendChatMessage(spaceName, text, {threadName})`** added to `src/lib/google-chat/client.ts` — uses the existing SA token cache to POST to `spaces/<id>/messages` with optional threading. Finds the right space for a Chat sender by looking back through `google_chat_inbound.space_name` on their most recent processed message.
+- **Both defect status-flip paths hooked** — `applyDefectStatusUpdate` (JSON/queue path) and `updateDefect` (FormData/web form path). Only fires on real forward transitions (`statusFrom !== newStatus`) so retries or re-submits don't double-notify. Queue is non-blocking: failures log and continue rather than failing the defect write.
+- **New admin page `/tenant-outbound`** (Resources → Tenant outbound, gated by QUICK_ADD_SECRET) — three sections:
+  - **Ready to send** — queued messages with channel + target + rendered body in a monospace card; Send + Skip buttons. Open-defect link on each row for context.
+  - **Missed — no tenant route** — transitions that happened when the property had no `tenant_contact_*`; tells Carl the fix is to add contact info on the property.
+  - **Recently completed** — last 30 sent/skipped/failed rows with timestamps and error reasons.
+- **Three Server Actions** (`approveSend`, `skipMessage`) — QUICK_ADD_SECRET gated, revalidate the page on each click.
+- **Nav + i18n** — "Tenant outbound" under Resources.
+- **TypeScript compiles clean.**
+
+**Deliberate scope cuts:**
+
+- **No pre-approved WhatsApp template fallback yet.** Inside Meta's 24h service window (tenant messaged in the last day), plain text works. Outside the window a template is required; for now the send will fail with Meta's error surfaced in the UI — Carl sees it and can send another channel or wait. Wiring a `message_type=template` branch is a small follow-up when approved templates exist.
+- **Chat cards deferred.** Plain text with threading is correct for status pushes today; cards (buttons for "Still not fixed" / "All good") can land once Carl sees how tenants reply.
+- **Email channel in `lookupOutboundRoute`** is wired at the type level but `sendQueuedOutbound` returns `failed` on `channel='email'` with a clear reason, rather than silently dropping. Email outbound can share the Postmark path when it's needed.
+- **No per-channel "approval gate on first N sends"** — every send is approval-gated for now (simplest correct behaviour). Auto-send after N approved on a channel can land when Carl has volume to want it.
 
 ---
 

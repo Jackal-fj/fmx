@@ -3,6 +3,7 @@
 import { supabaseServer } from '@/lib/supabase';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
+import { queueStatusUpdatePush } from '@/lib/outbound-messaging/queue';
 
 type UpdateResult = {
   ok: boolean;
@@ -75,11 +76,19 @@ export async function applyDefectStatusUpdate(input: {
     .eq('id', defect.id);
   if (defectErr) return { ok: false, error: `Status update failed: ${defectErr.message}` };
 
+  // FMX-080: queue a tenant-facing status push for FM approval. Only fire
+  // when the transition is a real forward step — a repeat flip to the same
+  // status would otherwise generate a second notification for the same work.
+  if (statusFrom !== input.new_status) {
+    await queueStatusUpdatePush(input.defect_id, input.new_status);
+  }
+
   revalidatePath('/defects');
   revalidatePath(`/defects/${input.defect_number}`);
   revalidatePath('/update-defect');
   revalidatePath('/');
   revalidatePath('/maintenance');
+  revalidatePath('/tenant-outbound');
   revalidatePath('/properties', 'layout');
   return { ok: true };
 }
@@ -205,12 +214,18 @@ export async function updateDefect(formData: FormData): Promise<UpdateResult> {
     return { ok: false, error: `Status update failed: ${defectErr.message}` };
   }
 
+  // FMX-080: queue tenant status push for FM approval on real transitions.
+  if (statusFrom !== newStatus && (newStatus === 'work_ordered' || newStatus === 'resolved')) {
+    await queueStatusUpdatePush(defect.id, newStatus);
+  }
+
   // Bust caches so the redirected pages show fresh data.
   revalidatePath('/defects');
   revalidatePath(`/defects/${defect.defect_number}`);
   revalidatePath('/update-defect');
   revalidatePath('/');   // dashboard shows recent defects widget
   revalidatePath('/maintenance');
+  revalidatePath('/tenant-outbound');
   // Property page can't be pinpointed without a lookup — invalidate the parent.
   revalidatePath('/properties', 'layout');
 
