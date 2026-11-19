@@ -106,17 +106,12 @@ export default async function ClientLanding({
   }
   if (scope.client_short_code !== params.short_code) notFound();
 
-  if (queryToken && queryToken !== cookieToken) {
-    cookieStore.set({
-      name: COOKIE_NAME,
-      value: queryToken,
-      path: `/client/${params.short_code}`,
-      httpOnly: true,
-      secure: true,
-      sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 180,
-    });
-  }
+  // FMX-074: cookie promotion is handled by middleware (src/middleware.ts).
+  // Writing cookies from a Server Component throws in Next.js 14, so the
+  // middleware intercepts `?t=` on /client/* before this page runs, sets the
+  // cookie, and redirects to the clean URL. By the time we're here, the
+  // cookie is either already set (middleware ran) or we're on the `?t=` leg
+  // directly (edge case — still works because we read from queryToken above).
 
   // Keep `activeToken` around — the report download button needs the plaintext to
   // mint a signed URL server-side. We pass it to the client component; it's the
